@@ -58,23 +58,28 @@ dist/quota.html
 dist/quota-admin.html
 ```
 
-两个页面是独立 HTML，不通过 `?mode=admin` 在运行时切换能力。页面能力在构建入口中确定：
+两个页面是独立 HTML，不通过 `?mode=admin` 在运行时切换能力。页面能力由两个静态入口的依赖图确定：
 
 ```ts
+// user.ts 不导入任何管理员写操作模块。
 createQuotaApp({
   mode: 'user',
   revealAccountIdentity: false,
-  allowCodexReset: false,
 });
 ```
 
 ```ts
+// admin.ts 是唯一允许导入 admin/codexReset.ts 的入口。
+import { consumeCodexResetCredit } from '../admin/codexReset';
+
 createQuotaApp({
   mode: 'admin',
   revealAccountIdentity: true,
-  allowCodexReset: true,
+  consumeCodexResetCredit,
 });
 ```
+
+`dist/quota.html` 中不得出现 Codex consume endpoint 字符串或管理员写操作实现；CI 必须扫描并验证这一点。
 
 ### 3.3 技术栈
 
@@ -86,8 +91,8 @@ createQuotaApp({
 - CSS variables；
 - Vite；
 - `vite-plugin-singlefile`；
-- Vitest；
-- Playwright 或 Vitest Browser Mode。
+- Vitest，用于纯逻辑和 DOM 单元测试；
+- Playwright，用于两个构建产物的浏览器集成测试。
 
 不使用：
 
@@ -153,6 +158,8 @@ cpa-quota-pages/
 │   ├── auth/
 │   │   ├── bootstrap.ts
 │   │   └── authenticatedFetch.ts
+│   ├── admin/
+│   │   └── codexReset.ts
 │   ├── api/
 │   │   ├── authFiles.ts
 │   │   ├── apiCall.ts
@@ -189,8 +196,12 @@ cpa-quota-pages/
 │   ├── providers/
 │   ├── quota/
 │   └── browser/
+├── build/
+│   └── cspHashPlugin.ts
 ├── nginx/
 │   └── example.conf
+├── scripts/
+│   └── clean.mjs
 ├── dist/
 │   ├── quota.html
 │   └── quota-admin.html
@@ -203,11 +214,13 @@ cpa-quota-pages/
 模块边界要求：
 
 - `auth/` 只负责 Sub2API 身份建立和统一请求头；
+- `admin/` 只包含管理员写操作，并且只能被 `entries/admin.ts` 导入；
 - `api/` 只负责 CPA Management API 协议；
 - `providers/` 负责 Provider 请求、解析和标准化；
 - `quota/` 只处理与 DOM 无关的排序、分页、恢复时间和时间线模型；
 - `ui/` 只消费标准化状态并渲染；
-- `entries/` 只配置 user/admin 能力差异。
+- `entries/` 只配置 user/admin 能力差异；
+- `build/cspHashPlugin.ts` 在 single-file 内联完成后计算脚本 hash、写入 CSP meta，并对最终 HTML 做产物约束检查。
 
 ## 5. API 边界
 
@@ -517,7 +530,7 @@ Codex · B918D4
 
 匿名标识由稳定认证文件标识计算摘要并截取，不把原始值写入可见 DOM、title、data 属性或日志。
 
-普通页不包含 Codex consume 的 UI 入口。
+普通页不包含 Codex consume 的 UI 入口，也不把 `admin/codexReset.ts` 打包进 `dist/quota.html`。构建测试必须确认普通页产物中不存在 `/rate-limit-reset-credits/consume`。
 
 ### 7.4 管理员页
 
@@ -659,6 +672,8 @@ interface AppState {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "clean": "node scripts/clean.mjs",
     "build:user": "vite build --mode user",
     "build:admin": "vite build --mode admin",
     "build": "npm run clean && npm run build:user && npm run build:admin",
@@ -667,7 +682,7 @@ interface AppState {
 }
 ```
 
-两个入口分别构建，避免 single-file 插件和多入口 chunk 冲突。
+两个入口分别构建，避免 single-file 插件和多入口 chunk 冲突。`npm run build` 先由 `scripts/clean.mjs` 清空 `dist`；两个 Vite mode 均配置 `emptyOutDir: false`，分别只写入自己的固定文件名，避免第二次构建删除第一次产物。单独执行 `build:user` 或 `build:admin` 只更新对应文件，不代表完整发布构建。
 
 构建产物必须：
 
@@ -677,7 +692,9 @@ interface AppState {
 - 无 source map；
 - 无 CPA management key；
 - 无测试认证数据；
-- 包含可识别的页面版本和 commit 信息。
+- 包含可识别的页面版本和 commit 信息；
+- CSP script hash 与最终内联脚本内容一致；
+- 普通页不包含 Codex consume endpoint 或管理员写操作模块。
 
 ### 11.2 测试范围
 
@@ -740,6 +757,8 @@ npm ci
 npm run typecheck
 npm test
 npm run build
+npm run test:e2e
+! grep -F '/rate-limit-reset-credits/consume' dist/quota.html
 git diff --exit-code -- dist
 ```
 
@@ -813,6 +832,8 @@ https://raw.githubusercontent.com/kael-aiur/cpa-quota-pages/v1.0.0/dist/quota-ad
 location = /quota.html {
     proxy_pass https://raw.githubusercontent.com/kael-aiur/cpa-quota-pages/v1.0.0/dist/quota.html?;
 
+    proxy_ssl_server_name on;
+    proxy_set_header Host raw.githubusercontent.com;
     proxy_set_header Authorization "";
     proxy_set_header Cookie "";
     proxy_set_header Referer "";
@@ -833,24 +854,26 @@ location /cpa/ {
     # 先验证浏览器发送的 Sub2API Bearer token。
     auth_request /_sub2api_auth;
 
-    # 发往 CPA 时替换为 CPA management key。
-    proxy_set_header Authorization "Bearer ${CPA_MANAGEMENT_KEY}";
+    # 该服务器本地文件只包含 proxy_set_header Authorization，且不进入 Git 仓库。
+    include /etc/nginx/secrets/cpa-management-auth.conf;
     proxy_pass http://cpa_backend/v0/management/;
 }
 ```
 
-`${CPA_MANAGEMENT_KEY}` 由部署环境或仅服务器可读的 include 提供，不写入仓库。
+`/etc/nginx/secrets/cpa-management-auth.conf` 的权限仅允许 Nginx 运行用户和管理员读取，内容形如 `proxy_set_header Authorization "Bearer 实际密钥";`。仓库中的示例配置只引用该文件，不保存实际密钥。
 
 ### 13.3 响应头
 
-建议设置：
+Nginx 必须设置：
 
 - `Referrer-Policy: no-referrer`；
 - `Cache-Control: private, no-store`；
 - `X-Content-Type-Options: nosniff`；
-- 允许目标 Sub2API iframe 的 `Content-Security-Policy: frame-ancestors`；
-- CSP `connect-src 'self'`；
-- 由于自包含 HTML 使用内联脚本和样式，CSP 必须采用构建时 hash 或受控 nonce，不应长期使用无限制的 `unsafe-inline`。
+- `Content-Security-Policy: frame-ancestors 'self'`，如 iframe 父页面不是同源，则改为明确列出的 Sub2API origin。
+
+每个构建产物在 `<head>` 中内置构建时生成的 CSP meta。固定指令为 `default-src 'none'`、`style-src 'unsafe-inline'`、`img-src data:`、`connect-src 'self'`、`base-uri 'none'`、`form-action 'none'` 和 `object-src 'none'`；`script-src` 由构建脚本对最终内联脚本内容计算 base64 SHA-256 后生成标准 CSP hash source expression。
+
+`script-src` 不使用 `unsafe-inline`；构建脚本必须在所有 JavaScript 内联完成后计算 hash，并在写入 CSP 后验证浏览器能够执行该脚本。`style-src 'unsafe-inline'` 仅用于内联样式表、额度宽度和时间线定位。`frame-ancestors` 不能由 meta CSP 生效，因此必须由 Nginx HTTP 响应头提供。
 
 ## 14. 发布验收标准
 
@@ -871,4 +894,6 @@ location /cpa/ {
 13. Weekly/Session 时间线正常；
 14. 页面在窄 iframe、浅色和深色主题下可用；
 15. 浏览器无非同源 Provider 请求；
-16. README 明确列出第 12.2 节的已接受风险。
+16. 普通页产物不包含 Codex consume endpoint；
+17. 两个页面的 CSP script hash 与最终内联脚本一致；
+18. README 明确列出第 12.2 节的已接受风险。
