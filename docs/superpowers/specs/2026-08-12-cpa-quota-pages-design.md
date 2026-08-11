@@ -856,7 +856,9 @@ location /cpa/ {
 
     # 该服务器本地文件只包含 proxy_set_header Authorization，且不进入 Git 仓库。
     include /etc/nginx/secrets/cpa-management-auth.conf;
-    proxy_pass http://cpa_backend/v0/management/;
+
+    # 浏览器路径已包含 /v0/management/；这里只移除 location 匹配的 /cpa/。
+    proxy_pass http://cpa_backend/;
 }
 ```
 
