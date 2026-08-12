@@ -164,9 +164,13 @@ function nestedRecords(value: unknown): JsonRecord[] {
 
 function jwtTier(token: string): number | null {
   const payload = token.split('.')[1];
-  if (!payload) return null;
+  if (!payload || typeof globalThis.atob !== 'function') return null;
   try {
-    const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as unknown;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const binary = globalThis.atob(padded);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
     const row = record(decoded);
     const entry = Object.entries(row ?? {}).find(([key]) => key.toLowerCase() === 'tier' || key.toLowerCase().endsWith('/tier') || key.toLowerCase().endsWith(':tier'));
     const value = number(entry?.[1]);

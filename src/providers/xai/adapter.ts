@@ -35,7 +35,17 @@ function body(result: ApiCallResult): unknown { return result.body ?? result.bod
 function statusError(result: ApiCallResult): CpaApiError {
   return new CpaApiError(extractApiError(result), { statusCode: result.statusCode, result });
 }
-function billingError(reason: unknown): unknown { return reason; }
+function isAbortError(reason: unknown): boolean {
+  return reason instanceof DOMException && reason.name === 'AbortError'
+    || reason instanceof Error && reason.name === 'AbortError';
+}
+
+function abortReason(signal: AbortSignal | undefined, results: PromiseSettledResult<unknown>[] = []): unknown {
+  const aborted = results.find((result) => result.status === 'rejected' && isAbortError(result.reason));
+  if (aborted?.status === 'rejected') return aborted.reason;
+  if (signal?.reason !== undefined) return signal.reason;
+  return new DOMException('The operation was aborted', 'AbortError');
+}
 
 function emptyData(billing: XaiBillingSummary | null): XaiQuotaData {
   return { windows: [], billing };
@@ -52,10 +62,9 @@ async function paidHealth(file: AuthFile, context: ProviderQueryContext): Promis
     }, { signal: context.signal, timeoutMs: context.timeoutMs }),
   ]);
   const chat = requests[1];
-  if (context.signal?.aborted) {
-    const aborted = requests.find((request) => request.status === 'rejected');
-    if (aborted?.status === 'rejected') throw aborted.reason;
-    throw new DOMException('The operation was aborted', 'AbortError');
+  if (context.signal?.aborted) throw abortReason(context.signal, requests);
+  if (requests.some((request) => request.status === 'rejected' && isAbortError(request.reason))) {
+    throw abortReason(context.signal, requests);
   }
   if (chat.status === 'rejected') throw chat.reason;
   if (!success(chat.value.statusCode)) throw statusError(chat.value);
@@ -72,26 +81,35 @@ async function paidHealth(file: AuthFile, context: ProviderQueryContext): Promis
 }
 
 export async function queryXaiQuota(file: AuthFile, context: ProviderQueryContext): Promise<XaiQuotaData> {
+  if (context.signal?.aborted) throw abortReason(context.signal);
   if (isPaidXaiCredential(file)) return emptyData(await paidHealth(file, context));
   const index = authIndex(file);
   const request = (url: string) => context.apiCall({ authIndex: index, method: 'GET', url, header: { ...XAI_REQUEST_HEADERS } }, { signal: context.signal, timeoutMs: context.timeoutMs });
   const [weekly, monthly] = await Promise.allSettled([request(XAI_BILLING_WEEKLY_URL), request(XAI_BILLING_MONTHLY_URL)]);
+  if (context.signal?.aborted) throw abortReason(context.signal, [weekly, monthly]);
+  if ([weekly, monthly].some((requestResult) => requestResult.status === 'rejected' && isAbortError(requestResult.reason))) {
+    throw abortReason(context.signal, [weekly, monthly]);
+  }
   const weeklyData = weekly.status === 'fulfilled' && success(weekly.value.statusCode) ? parseXaiBilling(body(weekly.value)) : null;
   const monthlyData = monthly.status === 'fulfilled' && success(monthly.value.statusCode) ? parseXaiBilling(body(monthly.value)) : null;
   const merged = mergeXaiBilling(weeklyData, monthlyData);
   if (merged) return emptyData(merged);
 
-  const originalError = weekly.status === 'rejected' && monthly.status === 'rejected'
-    ? billingError(weekly.reason)
+  const originalError = weekly.status === 'rejected'
+    ? weekly.reason
     : weekly.status === 'fulfilled' && !success(weekly.value.statusCode)
       ? statusError(weekly.value)
-      : monthly.status === 'fulfilled' && !success(monthly.value.statusCode)
-        ? statusError(monthly.value)
-        : new Error('xAI billing returned no useful data');
+      : monthly.status === 'rejected'
+        ? monthly.reason
+        : monthly.status === 'fulfilled' && !success(monthly.value.statusCode)
+          ? statusError(monthly.value)
+          : new Error('xAI billing returned no useful data');
+  if (context.signal?.aborted) throw abortReason(context.signal);
   try {
     return emptyData(await paidHealth(file, context));
   } catch (cause) {
-    if (context.signal?.aborted) throw cause;
+    if (context.signal?.aborted) throw abortReason(context.signal);
+    if (isAbortError(cause)) throw cause;
     throw originalError;
   }
 }

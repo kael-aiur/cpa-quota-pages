@@ -26,7 +26,7 @@ function result(body: unknown, statusCode = 200): ApiCallResult {
 }
 
 function encodeJwt(payload: Record<string, unknown>): string {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const encoded = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   return `header.${encoded}.signature`;
 }
 
@@ -65,6 +65,16 @@ describe('xAI billing parser', () => {
   it('does not expose a monthly rollover as a quota reset', () => {
     const data = parseXaiBilling(monthly);
     expect(data).toMatchObject({ periodType: 'monthly', resetAtMs: null, periodHours: null });
+  });
+
+  it('recognizes JWT tier with no Node Buffer available', () => {
+    const originalBuffer = globalThis.Buffer;
+    Object.defineProperty(globalThis, 'Buffer', { configurable: true, value: undefined });
+    try {
+      expect(isPaidXaiCredential({ name: 'tier.json', metadata: { access_token: encodeJwt({ tier: 1 }) } })).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, 'Buffer', { configurable: true, value: originalBuffer });
+    }
   });
 
   it('recognizes using_api plus paid prefix, JWT tier, and not route hints', () => {
@@ -130,6 +140,60 @@ describe('xAI quota adapter', () => {
     });
     const error = await queryXaiQuota(file, { apiCall }).catch((cause: unknown) => cause);
     expect(error).toMatchObject({ name: 'CpaApiError', statusCode: 403 });
+  });
+
+  it('prioritizes a monthly AbortError over an ordinary weekly failure', async () => {
+    const abortError = new DOMException('aborted', 'AbortError');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url === XAI_BILLING_WEEKLY_URL) throw new Error('weekly failed');
+      throw abortError;
+    });
+    await expect(queryXaiQuota(file, { apiCall })).rejects.toBe(abortError);
+  });
+
+  it('stops before paid fallback when billing completes after caller abort', async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException('aborted', 'AbortError');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url === XAI_BILLING_WEEKLY_URL) return result({});
+      controller.abort(abortError);
+      return result({});
+    });
+    await expect(queryXaiQuota(file, { apiCall, signal: controller.signal })).rejects.toBe(abortError);
+    expect(apiCall).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not swallow caller aborts during paid health probes', async () => {
+    const controller = new AbortController();
+    const abortError = new DOMException('aborted', 'AbortError');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url === XAI_API_ME_URL) {
+        controller.abort(abortError);
+        throw abortError;
+      }
+      return result({ choices: [] });
+    });
+    await expect(queryXaiQuota({ ...file, using_api: true, prefix: 'paid' }, { apiCall, signal: controller.signal })).rejects.toBe(abortError);
+  });
+
+  it('preserves the weekly billing error when monthly returns empty data', async () => {
+    const weeklyError = new Error('weekly failed');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url === XAI_BILLING_WEEKLY_URL) throw weeklyError;
+      if (request.url === XAI_BILLING_MONTHLY_URL) return result({});
+      return result({ error: 'invalid token' }, 401);
+    });
+    await expect(queryXaiQuota(file, { apiCall })).rejects.toBe(weeklyError);
+  });
+
+  it('preserves the monthly billing error when weekly returns empty data', async () => {
+    const monthlyError = new Error('monthly failed');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url === XAI_BILLING_WEEKLY_URL) return result({});
+      if (request.url === XAI_BILLING_MONTHLY_URL) throw monthlyError;
+      return result({ error: 'invalid token' }, 401);
+    });
+    await expect(queryXaiQuota(file, { apiCall })).rejects.toBe(monthlyError);
   });
 
   it('does not swallow caller aborts', async () => {
