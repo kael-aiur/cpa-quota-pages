@@ -1,0 +1,48 @@
+import type { AuthenticatedFetch } from '../auth/types';
+
+export type JsonRecord = Record<string, unknown>;
+
+export interface AuthFile extends JsonRecord {
+  name: string;
+  provider?: string;
+  type?: string;
+  source?: string;
+  path?: string;
+  email?: string;
+  projectId?: string;
+  authIndex?: string | number | null;
+  runtimeOnly?: boolean | string;
+  runtime_only?: boolean | string;
+  disabled?: boolean | string | number;
+  unavailable?: boolean | string | number;
+  modified?: number;
+  priority?: number;
+  weight?: number;
+  statusMessage?: string;
+}
+
+export interface ApiCallRequest {
+  authIndex: string;
+  method: 'GET' | 'POST';
+  url: string;
+  header: Record<string, string>;
+  data?: string;
+}
+
+export interface ApiCallResult<T = unknown> {
+  statusCode: number;
+  header: Record<string, string[]>;
+  bodyText: string;
+  body: T | string | null;
+}
+
+export interface CpaApi {
+  listAuthFiles(signal?: AbortSignal): Promise<AuthFile[]>;
+  downloadAuthFile(name: string, signal?: AbortSignal): Promise<string>;
+  apiCall<T>(
+    request: ApiCallRequest,
+    options?: { signal?: AbortSignal; timeoutMs?: number },
+  ): Promise<ApiCallResult<T>>;
+}
+
+export type CpaRequest = AuthenticatedFetch;
