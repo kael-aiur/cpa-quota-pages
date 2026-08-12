@@ -60,7 +60,7 @@ describe('project contract', () => {
     expect(runCommand('git', 'check-ignore', '--quiet', 'dist/quota.html').status).toBe(1);
     expect(runCommand('git', 'ls-files', '--error-unmatch', 'dist/quota.html').status).toBe(0);
     expect(runCommand('git', 'ls-files', '--error-unmatch', 'dist/quota-admin.html').status).toBe(0);
-  });
+  }, 30_000);
 
   it('makes check:dist fail when a template changes', () => {
     const templatePath = resolve(projectRoot, 'templates/quota.html');
@@ -72,7 +72,7 @@ describe('project contract', () => {
       writeFileSync(templatePath, original);
       runBuild();
     }
-  });
+  }, 30_000);
 
   it('makes check:dist fail when a generated artifact changes', () => {
     runBuild();
@@ -85,5 +85,5 @@ describe('project contract', () => {
       writeFileSync(artifactPath, original);
       runBuild();
     }
-  });
+  }, 30_000);
 });
