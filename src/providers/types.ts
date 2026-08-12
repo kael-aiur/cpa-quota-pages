@@ -21,6 +21,7 @@ export interface ProviderQueryContext {
     request: Parameters<CpaApi['apiCall']>[0],
     options?: { signal?: AbortSignal; timeoutMs?: number },
   ) => Promise<ApiCallResult>;
+  downloadAuthFile?: CpaApi['downloadAuthFile'];
   signal?: AbortSignal;
   timeoutMs?: number;
 }

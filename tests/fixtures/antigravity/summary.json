@@ -1,0 +1,20 @@
+{
+  "groups": [
+    {
+      "displayName": "Zeta Models",
+      "description": "secondary",
+      "buckets": [
+        { "displayName": "Weekly", "window": "weekly", "remaining_fraction": 0.4, "reset_time": "2026-08-19T00:00:00.000Z" },
+        { "display_name": "Five Hour", "window": "5h", "remainingFraction": 0.75, "resetTime": "2026-08-12T15:00:00.000Z" },
+        { "displayName": "Invalid", "window": "5h", "remainingFraction": 1.4 },
+        { "displayName": "Bad", "window": "weekly", "remainingFraction": "not-a-number" }
+      ]
+    },
+    {
+      "display_name": "Alpha Models",
+      "buckets": [
+        { "display_name": "Gemini", "window": "weekly", "remaining_fraction": "50%", "bucket_id": "gemini-weekly" }
+      ]
+    }
+  ]
+}
