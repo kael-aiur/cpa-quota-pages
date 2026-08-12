@@ -38,15 +38,21 @@ function record(value: unknown): JsonRecord | null {
 }
 
 function parsePayload(value: unknown): ClaudeUsagePayload {
+  let parsed: unknown = value;
   if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) throw new Error('Claude usage response must be a JSON object (empty)');
     try {
-      const parsed = JSON.parse(value) as unknown;
-      return record(parsed) as ClaudeUsagePayload ?? {};
+      parsed = JSON.parse(trimmed) as unknown;
     } catch {
-      return {};
+      throw new Error('Claude usage response must be a JSON object (malformed JSON)');
     }
   }
-  return record(value) as ClaudeUsagePayload ?? {};
+
+  if (parsed === null) throw new Error('Claude usage response must be a JSON object (null)');
+  const normalized = record(parsed);
+  if (!normalized) throw new Error('Claude usage response must be a JSON object (primitive)');
+  return normalized as ClaudeUsagePayload;
 }
 
 function parseProfile(value: unknown): JsonRecord | null {

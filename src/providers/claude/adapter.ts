@@ -1,5 +1,5 @@
 import type { AuthFile } from '../../api/types';
-import { extractApiError } from '../../api/errors';
+import { CpaApiError, extractApiError } from '../../api/errors';
 import type { ProviderQueryContext } from '../types';
 import { parseClaudeQuota } from './parser';
 import type { ClaudeQuotaData } from './types';
@@ -13,16 +13,20 @@ export const CLAUDE_REQUEST_HEADERS = {
 };
 
 function responseBody(result: { body: unknown; bodyText: string }): unknown {
-  return result.body ?? result.bodyText;
+  return result.body;
 }
 
-function errorForResult(result: { statusCode: number; body: unknown; bodyText: string }): Error {
-  return new Error(extractApiError({
+function errorForResult(result: { statusCode: number; body: unknown; bodyText: string }): CpaApiError {
+  const apiResult = {
     statusCode: result.statusCode,
     header: {},
     bodyText: result.bodyText,
     body: result.body,
-  }));
+  };
+  return new CpaApiError(extractApiError(apiResult), {
+    statusCode: result.statusCode,
+    result: apiResult,
+  });
 }
 
 function authIndex(file: AuthFile): string {

@@ -63,6 +63,17 @@ describe('Claude quota parser', () => {
   ])('resolves %s as %s', (input, expected) => {
     expect(parseClaudeQuota({}, input).planType).toBe(expected);
   });
+
+  it('parses a usage JSON string as an object payload', () => {
+    expect(parseClaudeQuota(JSON.stringify(legacyUsage)).windows).toHaveLength(7);
+  });
+
+  it.each(['not json', '', '   ', null, 42, true, []])(
+    'rejects a non-object usage payload: %s',
+    (payload) => {
+      expect(() => parseClaudeQuota(payload)).toThrow('Claude usage response must be a JSON object');
+    },
+  );
 });
 
 describe('Claude quota adapter', () => {
@@ -108,12 +119,41 @@ describe('Claude quota adapter', () => {
     expect(data.planType).toBeNull();
   });
 
+  it('ignores a malformed optional profile response', async () => {
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url.endsWith('/usage')) return result(JSON.stringify(legacyUsage));
+      return result('not json');
+    });
+
+    const data = await queryClaudeQuota(file, context(apiCall));
+    expect(data.windows).toHaveLength(7);
+    expect(data.planType).toBeNull();
+  });
+
   it('rejects a non-2xx usage response even when apiCall resolves', async () => {
     const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
       if (request.url.endsWith('/usage')) return result({ message: 'rate limited' }, 429);
       return result(profile);
     });
 
-    await expect(queryClaudeQuota(file, context(apiCall))).rejects.toThrow('rate limited');
+    const error = await queryClaudeQuota(file, context(apiCall)).catch((cause: unknown) => cause);
+    expect(error).toMatchObject({ statusCode: 429 });
+    expect(error).toHaveProperty('result.body.message', 'rate limited');
+  });
+
+  it.each([
+    ['not json', 'malformed JSON'],
+    ['', 'empty'],
+    [null, 'null'],
+    [42, 'primitive'],
+  ])('rejects a 2xx %s usage response', async (body, kind) => {
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url.endsWith('/usage')) return result(body);
+      return result(profile);
+    });
+
+    await expect(queryClaudeQuota(file, context(apiCall))).rejects.toThrow(
+      `Claude usage response must be a JSON object (${kind})`,
+    );
   });
 });
