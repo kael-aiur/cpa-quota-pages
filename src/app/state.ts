@@ -12,11 +12,17 @@ export type ProviderQuotaResult =
   | KimiQuotaData
   | XaiQuotaData;
 
+export interface QuotaErrorInfo {
+  name: string;
+  message: string;
+  statusCode?: number;
+}
+
 export type QuotaLoadState =
   | { status: 'idle' }
   | { status: 'loading' }
   | { status: 'success'; data: ProviderQuotaResult }
-  | { status: 'error'; error: unknown };
+  | { status: 'error'; error: QuotaErrorInfo };
 
 export type AuthState =
   | { status: 'idle' }
@@ -44,6 +50,7 @@ export interface QuotaStore {
   failAccountGeneration(generation: number): boolean;
   setQuota(accountId: string, generation: number, quota: QuotaLoadState): boolean;
   setQuotaBatch(generation: number, updates: ReadonlyMap<string, QuotaLoadState>): boolean;
+  setQuotaErrors(generation: number, accountIds: readonly string[], error: QuotaErrorInfo): boolean;
   setBatchLoading(loading: boolean): void;
   invalidateAuth(): void;
   destroy(): void;
@@ -126,7 +133,7 @@ function accountFingerprint(account: AccountEntry): string {
 
 function cloneQuota(quota: QuotaLoadState): QuotaLoadState {
   if (quota.status === 'success') return { status: 'success', data: deepClone(quota.data) };
-  if (quota.status === 'error') return { status: 'error', error: quota.error };
+  if (quota.status === 'error') return { status: 'error', error: { ...quota.error } };
   return { status: quota.status };
 }
 
@@ -237,6 +244,14 @@ export function createQuotaStore(): QuotaStore {
       for (const [accountId, quota] of updates) {
         if (state.accounts.some((account) => account.id === accountId)) quotaCache.set(accountId, cloneQuota(quota));
       }
+      state = { ...state, quotaCache };
+      publish();
+      return true;
+    },
+    setQuotaErrors(generation, accountIds, error) {
+      if (destroyed || generation !== state.generation) return false;
+      const quotaCache = new Map(state.quotaCache);
+      for (const accountId of accountIds) if (state.accounts.some((account) => account.id === accountId)) quotaCache.set(accountId, { status: 'error', error: { ...error } });
       state = { ...state, quotaCache };
       publish();
       return true;

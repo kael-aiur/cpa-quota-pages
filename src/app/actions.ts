@@ -26,7 +26,16 @@ export interface QuotaActions {
   resetCodex?(accountId: string): Promise<void>;
 }
 
-function errorState(error: unknown): QuotaLoadState { return { status: 'error', error }; }
+function errorInfo(error: unknown): { name: string; message: string; statusCode?: number } {
+  if (error instanceof Error) {
+    const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number'
+      ? (error as unknown as { statusCode: number }).statusCode
+      : undefined;
+    return statusCode === undefined ? { name: error.name, message: error.message } : { name: error.name, message: error.message, statusCode };
+  }
+  return { name: 'Error', message: String(error) };
+}
+function errorState(error: unknown): QuotaLoadState { return { status: 'error', error: errorInfo(error) }; }
 function abortError(signal: AbortSignal): unknown {
   return signal.reason ?? new DOMException('The operation was aborted', 'AbortError');
 }
@@ -36,6 +45,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
   const lifecycle = createPageLifecycle(parentSignal);
   const queries: QueryMap = { ...providerQueries, ...options.providerQueries };
   const loading = new Map<string, number>();
+  let operationToken = 0;
   let batchToken = 0;
   let batchInFlight = false;
   let destroyed = false;
@@ -68,13 +78,20 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
     const generation = options.store.getState().generation;
     const key = loadingKey(generation, account.id);
     if (loading.has(key)) return;
-    loading.set(key, generation);
+    const operation = ++operationToken;
+    loading.set(key, operation);
     options.store.setQuota(account.id, generation, { status: 'loading' });
     try {
       const result = await queryAccount(account);
-      if (!destroyed && loading.get(key) === generation) options.store.setQuota(account.id, generation, result);
+      if (!destroyed && loading.get(key) === operation) {
+        try {
+          options.store.setQuota(account.id, generation, result);
+        } catch (error) {
+          options.store.setQuota(account.id, generation, errorState(error));
+        }
+      }
     } finally {
-      if (loading.get(key) === generation) loading.delete(key);
+      if (loading.get(key) === operation) loading.delete(key);
     }
   };
 
@@ -86,7 +103,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
       if (lifecycle.signal.aborted) throw abortError(lifecycle.signal);
       options.store.replaceAccounts(generation, classifyAccounts(files));
     } catch (error) {
-      options.store.failAccountGeneration(generation);
+      if (!destroyed) options.store.failAccountGeneration(generation);
       throw error;
     }
   };
@@ -107,25 +124,34 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
         else groups.set(account.provider, [account]);
       }
       await Promise.all(Array.from(groups.values()).map(async (group) => {
+        const operations = new Map<string, number>();
         const groupAccounts = group.filter((account) => {
           const key = loadingKey(generation, account.id);
           if (loading.has(key)) return false;
-          loading.set(key, generation);
+          const operation = ++operationToken;
+          loading.set(key, operation);
+          operations.set(key, operation);
           return true;
         });
-        for (const account of groupAccounts) options.store.setQuota(account.id, generation, { status: 'loading' });
-        const settled = await Promise.allSettled(groupAccounts.map((account) => queryAccount(account)));
-        const updates = new Map<string, QuotaLoadState>();
-        for (let index = 0; index < settled.length; index += 1) {
-          const account = groupAccounts[index];
-          const result = settled[index];
-          if (result.status === 'fulfilled') updates.set(account.id, result.value);
-          else updates.set(account.id, errorState(result.reason));
-        }
-        if (token === batchToken && !destroyed && !lifecycle.signal.aborted) options.store.setQuotaBatch(generation, updates);
-        for (const account of groupAccounts) {
-          const key = loadingKey(generation, account.id);
-          if (loading.get(key) === generation) loading.delete(key);
+        try {
+          for (const account of groupAccounts) options.store.setQuota(account.id, generation, { status: 'loading' });
+          const settled = await Promise.allSettled(groupAccounts.map((account) => queryAccount(account)));
+          const updates = new Map<string, QuotaLoadState>();
+          for (let index = 0; index < settled.length; index += 1) {
+            const account = groupAccounts[index];
+            const result = settled[index];
+            if (result.status === 'fulfilled') updates.set(account.id, result.value);
+            else updates.set(account.id, errorState(result.reason));
+          }
+          if (token === batchToken && !destroyed && !lifecycle.signal.aborted) {
+            try {
+              options.store.setQuotaBatch(generation, updates);
+            } catch (error) {
+              options.store.setQuotaErrors(generation, groupAccounts.map(({ id }) => id), errorInfo(error));
+            }
+          }
+        } finally {
+          for (const [key, operation] of operations) if (loading.get(key) === operation) loading.delete(key);
         }
       }));
       if (lifecycle.signal.aborted) throw abortError(lifecycle.signal);
@@ -141,6 +167,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
     batchToken += 1;
     lifecycle.destroy();
     loading.clear();
+    options.store.setBatchLoading(false);
   };
 
   return { reloadAccounts, queryOne, queryCurrentPage, destroy };

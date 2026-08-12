@@ -124,6 +124,123 @@ describe('quota actions', () => {
     await expect(actions.queryOne('a')).resolves.toBeUndefined();
   });
 
+  it('converts invalid single-card data to safe error and clears its loading guard', async () => {
+    const store = createQuotaStore();
+    const a = account('a', 'claude');
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [a]);
+    const query = vi.fn(async () => ({ windows: [], bad: new Date() }) as never);
+    const actions = createQuotaActions({ api: api([a], []), store, providerQueries: { claude: query } });
+    await actions.queryOne('a');
+    expect(store.getState().quotaCache.get('a')?.status).toBe('error');
+    await actions.queryOne('a');
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it('isolates invalid batch group data and commits other groups', async () => {
+    const store = createQuotaStore();
+    const accounts = [account('bad', 'claude'), account('good', 'kimi')];
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, accounts);
+    const actions = createQuotaActions({
+      api: api(accounts, []),
+      store,
+      providerQueries: {
+        claude: async () => ({ windows: [], bad: new Map([['x', 1]]) }) as never,
+        kimi: async () => ({ windows: [] }) as never,
+      },
+    });
+    await actions.queryCurrentPage(['bad', 'good']);
+    expect(store.getState().quotaCache.get('bad')?.status).toBe('error');
+    expect(store.getState().quotaCache.get('good')?.status).toBe('success');
+    expect(store.getState().batchLoading).toBe(false);
+    await actions.queryCurrentPage(['bad', 'good']);
+    expect(store.getState().batchLoading).toBe(false);
+  });
+
+  it('does not partially commit a group when batch validation fails', async () => {
+    const store = createQuotaStore();
+    const accounts = [account('first', 'claude'), account('second', 'claude')];
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, accounts);
+    const actions = createQuotaActions({
+      api: api(accounts, []),
+      store,
+      providerQueries: {
+        claude: async (file) => file.name === 'first' ? ({ windows: [], bad: new Date() }) as never : ({ windows: [] }) as never,
+      },
+    });
+    await actions.queryCurrentPage(['first', 'second']);
+    expect(store.getState().quotaCache.get('first')?.status).toBe('error');
+    expect(store.getState().quotaCache.get('second')?.status).toBe('error');
+  });
+
+  it('clears batch loading immediately when destroyed during an active batch', async () => {
+    const store = createQuotaStore();
+    const a = account('a', 'claude');
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [a]);
+    const actions = createQuotaActions({
+      api: api([a], []),
+      store,
+      providerQueries: { claude: async (_file, context) => new Promise((_resolve, reject) => context.signal?.addEventListener('abort', () => reject(context.signal?.reason), { once: true })) },
+    });
+    const batch = actions.queryCurrentPage(['a']);
+    await vi.waitFor(() => expect(store.getState().batchLoading).toBe(true));
+    actions.destroy();
+    expect(store.getState().batchLoading).toBe(false);
+    await expect(batch).rejects.toThrow();
+    expect(store.getState().batchLoading).toBe(false);
+  });
+
+  it('does not publish failed reload cleanup after destroy', async () => {
+    const store = createQuotaStore();
+    const a = account('a', 'claude');
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [a]);
+    let rejectReload!: (error: Error) => void;
+    const actions = createQuotaActions({
+      api: { ...api([a], []), listAuthFiles: vi.fn(() => new Promise<never>((_resolve, reject) => { rejectReload = reject; })) },
+      store,
+    });
+    const states: number[] = [];
+    store.subscribe((state) => states.push(state.generation));
+    states.length = 0;
+    const reload = actions.reloadAccounts();
+    states.length = 0;
+    actions.destroy();
+    rejectReload(new Error('cancelled'));
+    await expect(reload).rejects.toThrow('cancelled');
+    expect(states).toHaveLength(0);
+  });
+
+  it('keeps a newer operation loading guard when an older operation settles', async () => {
+    const store = createQuotaStore();
+    const a = account('a', 'claude');
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [a]);
+    let releaseOld!: () => void;
+    let calls = 0;
+    const actions = createQuotaActions({
+      api: api([a], []),
+      store,
+      providerQueries: { claude: async () => {
+        calls += 1;
+        if (calls === 1) await new Promise<void>((resolve) => { releaseOld = resolve; });
+        return { windows: [] } as never;
+      } },
+    });
+    const oldQuery = actions.queryOne('a');
+    await vi.waitFor(() => expect(calls).toBe(1));
+    store.beginAccountGeneration();
+    store.replaceAccounts(store.getState().generation, [a]);
+    const newQuery = actions.queryOne('a');
+    await vi.waitFor(() => expect(calls).toBe(2));
+    releaseOld();
+    await Promise.all([oldQuery, newQuery]);
+    expect(calls).toBe(2);
+  });
+
   it('does not retry a failed provider query or persist quota outside the store', async () => {
     const store = createQuotaStore();
     const a = account('a', 'claude');
