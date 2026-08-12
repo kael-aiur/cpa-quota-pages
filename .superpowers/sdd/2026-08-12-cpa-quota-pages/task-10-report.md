@@ -9,6 +9,12 @@ Revision 1 fixes:
 - Hardened minute-clock timeout reentrancy with generation checks and post-notify listener/timer checks; unsubscribe, destroy, and visibility recalibration cannot leave a stale interval.
 - Added reentrancy and timer-counter coverage.
 
+Revision 2 additions:
+
+- Added America/New_York DST regression coverage for spring-forward (71 elapsed hours), fall-back (73 elapsed hours), and weekly local-calendar boundaries.
+- Extended `TimelineSpan` with `isCurrentPeriod` (true exactly for offset 0) and `nowPositionPercent` (0..100 only when the supplied current instant is inside `[startMs, endMs)`, otherwise null). An optional current-now argument makes outside-span behavior directly testable without UI state.
+- Added typed standard Provider timeline-lane coverage for Claude, Antigravity buckets, Codex windows/credit ticks, Kimi, and xAI weekly; xAI monthly remains empty.
+
 Implemented pure quota time-model modules:
 
 - `src/quota/resetSchedule.ts`: extracts future recovery instants from all five normalized Provider shapes, includes available Codex credits, excludes xAI monthly rollover and Codex subscription renewal, ignores invalid/past values, and applies strict `< 1 hour` urgency.

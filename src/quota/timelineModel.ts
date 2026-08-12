@@ -2,7 +2,15 @@ import type { Provider } from '../providers/types';
 
 const HOUR_MS = 60 * 60 * 1000;
 type TimelineMode = 'weekly' | 'session';
-export interface TimelineSpan { startMs: number; endMs: number; days: number }
+export interface TimelineSpan {
+  startMs: number;
+  endMs: number;
+  days: number;
+  /** True only for offset 0, the period containing the caller's current day. */
+  isCurrentPeriod: boolean;
+  /** Current-time marker within this span, or null when now is outside it. */
+  nowPositionPercent: number | null;
+}
 export interface TimelineLimit { label: string; remaining: number }
 export interface TimelineCredit { id: string; grantedAtMs: number | null; expiresAtMs: number }
 export interface TimelineLane { name: string; displayName: string; provider: Provider; anchorMs: number | null; periodHours: number | null; remaining: number | null; limits: TimelineLimit[]; resetCredits: TimelineCredit[] }
@@ -14,13 +22,18 @@ const clamp = (value: number): number => Math.max(0, Math.min(100, value));
 const startDay = (ms: number): number => { const date = new Date(ms); date.setHours(0, 0, 0, 0); return date.getTime(); };
 const startWeek = (ms: number): number => { const date = new Date(startDay(ms)); date.setDate(date.getDate() - date.getDay()); return date.getTime(); };
 
-export function timelineSpan(mode: TimelineMode, offset: number, nowMs: number): TimelineSpan {
+export function timelineSpan(mode: TimelineMode, offset: number, nowMs: number, currentNowMs = nowMs): TimelineSpan {
   const days = mode === 'weekly' ? 14 : 3;
   const date = new Date(mode === 'weekly' ? startWeek(nowMs) : startDay(nowMs));
   date.setDate(date.getDate() + offset * (mode === 'weekly' ? 7 : 1));
   const end = new Date(date);
   end.setDate(end.getDate() + days);
-  return { startMs: date.getTime(), endMs: end.getTime(), days };
+  const startMs = date.getTime();
+  const endMs = end.getTime();
+  const nowPositionPercent = currentNowMs >= startMs && currentNowMs < endMs
+    ? ((currentNowMs - startMs) / (endMs - startMs)) * 100
+    : null;
+  return { startMs, endMs, days, isCurrentPeriod: offset === 0, nowPositionPercent };
 }
 
 function empty(input: TimelineLaneInput): TimelineLane { return { name: input.name, displayName: input.displayName, provider: input.provider, anchorMs: null, periodHours: null, remaining: null, limits: [], resetCredits: [] }; }
