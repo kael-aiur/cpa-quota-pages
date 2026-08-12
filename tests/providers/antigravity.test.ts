@@ -44,6 +44,15 @@ describe('Antigravity project resolver', () => {
     await expect(resolveAntigravityProjectId(file, vi.fn(async () => JSON.stringify({ web: { project_id: 'downloaded-web-project' } })))).resolves.toBe('downloaded-web-project');
   });
 
+  it('falls through empty snake aliases to valid camel project aliases', async () => {
+    await expect(resolveAntigravityProjectId({ ...file, project_id: '', projectId: 'top-camel' }, vi.fn(async () => ''))).resolves.toBe('top-camel');
+    await expect(resolveAntigravityProjectId({ ...file, metadata: { project_id: '', projectId: 'metadata-camel' } }, vi.fn(async () => ''))).resolves.toBe('metadata-camel');
+    await expect(resolveAntigravityProjectId({ ...file, attributes: { project_id: '', projectId: 'attributes-camel' } }, vi.fn(async () => ''))).resolves.toBe('attributes-camel');
+    await expect(resolveAntigravityProjectId(file, vi.fn(async () => JSON.stringify({ project_id: '', projectId: 'downloaded-camel' })))).resolves.toBe('downloaded-camel');
+    await expect(resolveAntigravityProjectId(file, vi.fn(async () => JSON.stringify({ installed: { project_id: '', projectId: 'installed-camel' } })))).resolves.toBe('installed-camel');
+    await expect(resolveAntigravityProjectId(file, vi.fn(async () => JSON.stringify({ web: { project_id: '', projectId: 'web-camel' } })))).resolves.toBe('web-camel');
+  });
+
   it('returns null for malformed or empty downloaded auth', async () => {
     await expect(resolveAntigravityProjectId(file, vi.fn(async () => 'not json'))).resolves.toBeNull();
     await expect(resolveAntigravityProjectId(file, vi.fn(async () => ''))).resolves.toBeNull();
@@ -52,6 +61,12 @@ describe('Antigravity project resolver', () => {
 });
 
 describe('Antigravity quota parser', () => {
+  it('falls through empty snake bucket aliases to valid camel fields', () => {
+    const data = parseAntigravityQuota({ groups: [{ display_name: '', displayName: 'Alias Group', buckets: [{ remaining_fraction: '', remainingFraction: '50%', bucket_id: '', bucketId: 'alias-bucket', display_name: '', displayName: 'Alias Bucket', reset_time: '', resetTime: '2026-08-12T15:00:00.000Z', window: '5h' }] }] }, {}, nowMs);
+    expect(data.groups[0]).toMatchObject({ label: 'Alias Group' });
+    expect(data.groups[0].buckets[0]).toMatchObject({ id: 'alias-bucket', label: 'Alias Bucket', remainingFraction: 0.5, resetAtMs: Date.parse('2026-08-12T15:00:00.000Z') });
+  });
+
   it('parses snake/camel buckets, filters invalid fractions, sorts groups and 5h before weekly', () => {
     const data = parseAntigravityQuota(summary, {}, nowMs);
     expect(data.groups.map((group) => group.label)).toEqual(['Alpha Models', 'Zeta Models']);

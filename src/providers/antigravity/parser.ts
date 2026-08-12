@@ -45,10 +45,22 @@ function text(value: unknown): string | null {
   return null;
 }
 
+function firstAlias<T>(values: unknown[], normalize: (value: unknown) => T | null): T | null {
+  for (const value of values) {
+    const normalized = normalize(value);
+    if (normalized !== null) return normalized;
+  }
+  return null;
+}
+
+function firstText(...values: unknown[]): string | null {
+  return firstAlias(values, text);
+}
+
 function projectField(value: unknown): string | null {
   const entry = record(value);
   if (!entry) return null;
-  return text(entry.project_id ?? entry.projectId);
+  return firstText(entry.project_id, entry.projectId);
 }
 
 function parseDownload(value: string): JsonRecord | null {
@@ -64,7 +76,7 @@ export async function resolveAntigravityProjectId(
   file: AuthFile,
   download: (name: string) => Promise<string>,
 ): Promise<string | null> {
-  const direct = text(file.project_id ?? file.projectId);
+  const direct = firstText(file.project_id, file.projectId);
   if (direct) return direct;
 
   const metadata = projectField(file.metadata);
@@ -79,7 +91,7 @@ export async function resolveAntigravityProjectId(
   try {
     const downloaded = parseDownload(await download(file.name));
     if (!downloaded) return null;
-    const downloadedDirect = text(downloaded.project_id ?? downloaded.projectId);
+    const downloadedDirect = firstText(downloaded.project_id, downloaded.projectId);
     if (downloadedDirect) return downloadedDirect;
     const installed = projectField(downloaded.installed);
     if (installed) return installed;
@@ -172,8 +184,8 @@ function parseTier(value: unknown): { id: string | null; name: string | null } |
 export function parseAntigravitySubscription(payload: unknown): AntigravitySubscription | null {
   const parsed = parsePayload(payload);
   if (!parsed) return null;
-  const current = parseTier(parsed.currentTier ?? parsed.current_tier);
-  const paid = parseTier(parsed.paidTier ?? parsed.paid_tier);
+  const current = parseTier(firstAlias([parsed.currentTier, parsed.current_tier], record));
+  const paid = parseTier(firstAlias([parsed.paidTier, parsed.paid_tier], record));
   const tier = paid?.id ? paid : current;
   if (!tier) return null;
   const plans: Record<string, AntigravitySubscription['plan']> = {
@@ -202,18 +214,18 @@ export function parseAntigravityQuota(
   const groups = rawGroups.map((rawGroup, groupIndex): AntigravityQuotaGroup | null => {
     const group = record(rawGroup);
     if (!group) return null;
-    const label = text(group.displayName ?? group.display_name) ?? `Quota Group ${groupIndex + 1}`;
+    const label = firstText(group.displayName, group.display_name) ?? `Quota Group ${groupIndex + 1}`;
     const groupId = stableId(label, `quota-group-${groupIndex + 1}`);
     const rawBuckets = Array.isArray(group.buckets) ? group.buckets : [];
     const buckets = rawBuckets.map((rawBucket, bucketIndex): AntigravityQuotaBucket | null => {
       const bucket = record(rawBucket);
       if (!bucket) return null;
-      const remainingFraction = fraction(bucket.remainingFraction ?? bucket.remaining_fraction);
+      const remainingFraction = firstAlias([bucket.remainingFraction, bucket.remaining_fraction], fraction);
       if (remainingFraction === null) return null;
       const window = text(bucket.window);
-      const id = text(bucket.bucketId ?? bucket.bucket_id) ?? `${groupId}-${window ?? `bucket-${bucketIndex + 1}`}`;
-      const bucketLabel = text(bucket.displayName ?? bucket.display_name) ?? id;
-      const resetTime = text(bucket.resetTime ?? bucket.reset_time);
+      const id = firstText(bucket.bucketId, bucket.bucket_id) ?? `${groupId}-${window ?? `bucket-${bucketIndex + 1}`}`;
+      const bucketLabel = firstText(bucket.displayName, bucket.display_name) ?? id;
+      const resetTime = firstText(bucket.resetTime, bucket.reset_time);
       return {
         id,
         label: bucketLabel,
