@@ -22,6 +22,18 @@ describe('createAuthenticatedFetch', () => {
     expect(rawFetch).not.toHaveBeenCalled();
   });
 
+  it('uses the validated origin when fetching a relative request', async () => {
+    const rawFetch = vi.fn(async () => new Response('ok'));
+    const request = requestFor(rawFetch);
+
+    await request('/api/v1/data');
+
+    const [input, init] = rawFetch.mock.calls[0] as unknown as [string | URL, RequestInit];
+    expect(String(input)).toBe('https://sub2api.example/api/v1/data');
+    expect(String(input)).not.toContain(location.origin);
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer secret');
+  });
+
   it('allows only the exact API and CPA path prefixes', async () => {
     const rawFetch = vi.fn(async () => new Response('ok'));
     const request = requestFor(rawFetch);

@@ -8,9 +8,9 @@ function response(body: unknown, status = 200) {
   });
 }
 
-function authUrl(query = 'token=secret&theme=dark') {
+function authUrl(query = 'token=secret&theme=dark', origin = location.origin) {
   history.replaceState(null, '', `/quota.html?${query}`);
-  return new URL(location.href);
+  return new URL(`${origin}/quota.html?${query}`);
 }
 
 describe('bootstrapSub2ApiAuth', () => {
@@ -24,14 +24,14 @@ describe('bootstrapSub2ApiAuth', () => {
       calls.push(location.href);
       return response({ code: 0, data: { id: 7, status: 'active' } });
     });
-    const url = authUrl();
+    const url = authUrl('token=secret&theme=dark', 'https://sub2api.example');
 
     const session = await bootstrapSub2ApiAuth({ url, history, fetchImpl });
 
     expect(location.search).toBe('?theme=dark');
     expect(calls[0]).not.toContain('secret');
     expect(session.user.id).toBe(7);
-    expect(fetchImpl).toHaveBeenCalledWith('/api/v1/auth/me', expect.objectContaining({
+    expect(fetchImpl).toHaveBeenCalledWith('https://sub2api.example/api/v1/auth/me', expect.objectContaining({
       cache: 'no-store',
       credentials: 'same-origin',
       headers: expect.objectContaining({

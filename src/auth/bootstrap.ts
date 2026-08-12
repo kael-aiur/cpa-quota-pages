@@ -50,7 +50,7 @@ export async function bootstrapSub2ApiAuth(options: {
   options.history.replaceState(null, '', `${cleanedUrl.pathname}${cleanedUrl.search}${cleanedUrl.hash}`);
 
   const fetchImpl = options.fetchImpl ?? fetch;
-  const response = await fetchImpl('/api/v1/auth/me', {
+  const response = await fetchImpl(new URL('/api/v1/auth/me', options.url.origin).href, {
     cache: 'no-store',
     credentials: 'same-origin',
     headers: {

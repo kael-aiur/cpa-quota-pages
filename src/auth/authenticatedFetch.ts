@@ -88,7 +88,7 @@ export function createAuthenticatedFetch(options: AuthenticatedFetchOptions): Au
       if (requestController.signal.aborted) {
         throw requestController.signal.reason ?? abortError('请求已取消');
       }
-      const response = await fetchImpl(input, {
+      const response = await fetchImpl(target.href, {
         ...requestInit,
         headers,
         cache: 'no-store',
