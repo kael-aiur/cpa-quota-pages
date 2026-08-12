@@ -1,0 +1,13 @@
+{
+  "config": {
+    "currentPeriod": {
+      "type": "weekly",
+      "start": "2026-08-10T00:00:00Z",
+      "end": "2026-08-17T00:00:00Z"
+    },
+    "creditUsagePercent": 25,
+    "productUsage": [
+      { "product": "Grok", "usagePercent": 20 }
+    ]
+  }
+}
