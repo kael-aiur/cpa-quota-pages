@@ -26,7 +26,7 @@ describe('Codex parser', () => {
     expect(data.windows[0]?.id).toBe('rate-limit-5h-primary-standard');
     expect(data.windows[1]?.id).toBe('rate-limit-week-secondary-standard');
     expect(data.windows[2]?.id).toBe('code-review-rate-limit-month-primary-standard');
-    expect(data.windows[3]?.id).toMatch(/^spark-5h-primary-[0-9a-f]{6}$/);
+    expect(data.windows[3]?.id).toMatch(/^spark-5h-primary-[0-9a-f]{12}$/);
     expect(data.windows[0]?.usedPercent).toBe(100);
     expect(data.windows[2]?.periodHours).toBe(720);
     expect(data.credits.map((credit) => credit.id)).toEqual(['valid-1', 'valid-2']);
@@ -70,9 +70,9 @@ describe('Codex parser', () => {
     };
     const first = parseCodexQuota(usageWithDuplicates, null, { name: 'x', authIndex: 'i' }, nowMs).windows.map((window) => window.id);
     const second = parseCodexQuota(usageWithDuplicates, null, { name: 'x', authIndex: 'i' }, nowMs).windows.map((window) => window.id);
-    expect(first[0]).toMatch(/^spark-5h-primary-[0-9a-f]{6}$/);
-    expect(first[1]).toMatch(/^spark-5h-primary-[0-9a-f]{6}-2$/);
-    expect(first[2]).toMatch(/^spark-5h-primary-[0-9a-f]{6}$/);
+    expect(first[0]).toMatch(/^spark-5h-primary-[0-9a-f]{12}$/);
+    expect(first[1]).toMatch(/^spark-5h-primary-[0-9a-f]{12}-2$/);
+    expect(first[2]).toMatch(/^spark-5h-primary-[0-9a-f]{12}$/);
     expect(new Set(first).size).toBe(first.length);
     expect(second).toEqual(first);
 
@@ -81,6 +81,20 @@ describe('Codex parser', () => {
     };
     const reorderedIds = parseCodexQuota(reordered, null, { name: 'x', authIndex: 'i' }, nowMs).windows.map((window) => window.id);
     expect(reorderedIds).toEqual([first[2], first[0]]);
+  });
+
+  it('keeps same-identity windows stable when kind or period entries reorder', () => {
+    const entries = [
+      { limit_name: 'Shared', rate_limit: { primary_window: { limit_window_seconds: 18000 } } },
+      { limit_name: 'Shared', rate_limit: { secondary_window: { limit_window_seconds: 604800 } } },
+      { limit_name: 'Shared', rate_limit: { primary_window: { limit_window_seconds: 604800 } } },
+    ];
+    const original = parseCodexQuota({ additional_rate_limits: entries }, null, { name: 'x', authIndex: 'i' }, nowMs).windows;
+    const reordered = parseCodexQuota({ additional_rate_limits: [entries[2], entries[0], entries[1]] }, null, { name: 'x', authIndex: 'i' }, nowMs).windows;
+    const idsBySemantic = (windows: typeof original) => new Map(
+      windows.map((window) => [`${window.periodHours}-${window.id.includes('-secondary-') ? 'secondary' : 'primary'}`, window.id]),
+    );
+    expect(idsBySemantic(reordered)).toEqual(idsBySemantic(original));
   });
 
   it('keeps usage reset-credit counts when detail lookup fails', () => {

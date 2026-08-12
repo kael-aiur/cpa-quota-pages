@@ -79,12 +79,14 @@ function percent(value: unknown): number | null {
 }
 
 function stableHash(value: string): string {
-  let hash = 2166136261;
+  let first = 2166136261;
+  let second = 2246822519;
   for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second ^ code, 3266489917);
   }
-  return (hash >>> 0).toString(16).padStart(8, '0').slice(0, 6);
+  return `${(first >>> 0).toString(16).padStart(8, '0').slice(0, 6)}${(second >>> 0).toString(16).padStart(8, '0').slice(0, 6)}`;
 }
 
 function decodeBase64Url(value: string): string | null {
@@ -304,21 +306,23 @@ export function parseCodexQuota(
   parseScope(body.code_review_rate_limit ?? body.codeReviewRateLimit, 'code-review-rate-limit', 'standard', windows);
   const additionalValue = body.additional_rate_limits ?? body.additionalRateLimits;
   const additional = Array.isArray(additionalValue) ? additionalValue : [];
-  const additionalOccurrences = new Map<string, number>();
   for (const entry of additional) {
     const candidate = record(entry);
     if (!candidate) continue;
     const identity = text(candidate.limit_name ?? candidate.limitName ?? candidate.metered_feature ?? candidate.meteredFeature)
       ?? text(candidate.name)
       ?? 'additional-rate-limit';
-    const occurrence = additionalOccurrences.get(identity) ?? 0;
-    additionalOccurrences.set(identity, occurrence + 1);
-    const discriminator = `${stableHash(identity)}${occurrence > 0 ? `-${occurrence + 1}` : ''}`;
-    parseScope(candidate, identity, discriminator, windows);
+    parseScope(candidate, identity, stableHash(identity), windows);
   }
+  const occurrences = new Map<string, number>();
+  const finalizedWindows = windows.map((window) => {
+    const occurrence = occurrences.get(window.id) ?? 0;
+    occurrences.set(window.id, occurrence + 1);
+    return occurrence === 0 ? window : { ...window, id: `${window.id}-${occurrence + 1}` };
+  });
   const parsedCredits = parseCredits(creditDetails, nowMs, body);
   return {
-    windows,
+    windows: finalizedWindows,
     accountId: accountId(file),
     planType: planType(body, file),
     subscriptionActiveUntil: renewal(body, file),

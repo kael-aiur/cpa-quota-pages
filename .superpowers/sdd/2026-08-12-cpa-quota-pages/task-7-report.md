@@ -61,6 +61,19 @@
 - 绿：`npm test -- tests/providers/codex.test.ts`：13 tests passed。
 - `npm test`：最终运行结果见下方；typecheck、diff-check、negative grep 均已重新执行并通过。
 
+## 修复轮次 3
+
+- 将 additional occurrence 分配下沉到最终窗口 semantic base ID：base 由 scope、period、window kind 与内容身份 hash 构成；只有完全相同 semantic base 的窗口才追加 occurrence。
+- 同一 identity 的 primary/secondary、不同 duration，以及响应重排/前插不再互相改变 ID；完全相同语义重复项仍唯一且解析稳定。
+- 稳定身份 hash 从 6 hex 延长为 12 hex（48-bit 目标长度）。
+- 新增同名 primary-only/secondary-only 与同名不同 period 重排测试，并更新 hash 长度断言。
+
+## 修复轮次 3 验证
+
+- 红：新增语义重排与 hash 长度测试先失败；entry-level occurrence 导致 primary/secondary 或不同 period 重排时 occurrence 发生漂移，且旧 hash 只有 6 hex。
+- 绿：`npm test -- tests/providers/codex.test.ts`：14 tests passed。
+- `npm test`、`npm run typecheck`、`git diff --check` 与 negative consume grep：最终提交前重新运行并记录实际结果。
+
 ## Concerns
 
 - 订阅 renewal 与 reset-credit 详情依赖后端/认证 payload 的字段存在；未知字段不会阻塞主 quota。
