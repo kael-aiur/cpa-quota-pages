@@ -54,7 +54,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
       timeoutMs: options.timeoutMs,
     };
     try {
-      return { status: 'success', data: await query(account.file, context) as Record<string, unknown> };
+      return { status: 'success', data: await query(account.file, context) };
     } catch (error) {
       if (lifecycle.signal.aborted) throw abortError(lifecycle.signal);
       return errorState(error);

@@ -15,7 +15,7 @@ export type ProviderQuotaResult =
 export type QuotaLoadState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; data: ProviderQuotaResult | Record<string, unknown> }
+  | { status: 'success'; data: ProviderQuotaResult }
   | { status: 'error'; error: unknown };
 
 export type AuthState =

@@ -5,7 +5,7 @@ import { createQuotaStore, type QuotaLoadState } from '../../src/app/state';
 const account = (id: string, provider: AccountEntry['provider'] = 'claude'): AccountEntry => ({
   id, provider, file: { name: id, provider },
 });
-const success = (value: unknown): QuotaLoadState => ({ status: 'success', data: value as Record<string, unknown> });
+const success = (value: unknown): QuotaLoadState => ({ status: 'success', data: value as never });
 
 describe('quota store', () => {
   it('increments account generations and rejects stale writes', () => {
