@@ -1,0 +1,32 @@
+{
+  "limits": [
+    {
+      "detail": {
+        "limit": "100",
+        "remaining": "98",
+        "resetTime": "2026-08-12T17:00:00.123456789Z"
+      },
+      "window": {
+        "duration": 300,
+        "timeUnit": "TIME_UNIT_MINUTE"
+      }
+    },
+    {
+      "name": "Daily Coding",
+      "detail": {
+        "used": 25,
+        "limit": 100,
+        "reset_in": 86400
+      },
+      "window": {
+        "duration": "1",
+        "timeUnit": "TIME_UNIT_DAY"
+      }
+    }
+  ],
+  "usage": {
+    "used": 100,
+    "limit": 1000,
+    "resetTime": "2026-08-19T12:00:00Z"
+  }
+}
