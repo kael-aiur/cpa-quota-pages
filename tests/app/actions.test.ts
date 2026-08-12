@@ -107,6 +107,23 @@ describe('quota actions', () => {
     actions.destroy();
   });
 
+  it('clears loading state when account reload fails and allows a new query', async () => {
+    const store = createQuotaStore();
+    const a = account('a', 'claude');
+    const first = store.beginAccountGeneration();
+    store.replaceAccounts(first, [a]);
+    store.setQuota('a', first, { status: 'loading' });
+    const reloadError = new Error('reload failed');
+    const actions = createQuotaActions({
+      api: { ...api([a], []), listAuthFiles: vi.fn(async () => { throw reloadError; }) },
+      store,
+      providerQueries: { claude: async () => ({ windows: [] }) as never },
+    });
+    await expect(actions.reloadAccounts()).rejects.toBe(reloadError);
+    expect(store.getState().quotaCache.has('a')).toBe(false);
+    await expect(actions.queryOne('a')).resolves.toBeUndefined();
+  });
+
   it('does not retry a failed provider query or persist quota outside the store', async () => {
     const store = createQuotaStore();
     const a = account('a', 'claude');

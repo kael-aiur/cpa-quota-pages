@@ -81,9 +81,14 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
   const reloadAccounts = async (): Promise<void> => {
     if (destroyed) return;
     const generation = options.store.beginAccountGeneration();
-    const files = await options.api.listAuthFiles(lifecycle.signal);
-    if (lifecycle.signal.aborted) throw abortError(lifecycle.signal);
-    options.store.replaceAccounts(generation, classifyAccounts(files));
+    try {
+      const files = await options.api.listAuthFiles(lifecycle.signal);
+      if (lifecycle.signal.aborted) throw abortError(lifecycle.signal);
+      options.store.replaceAccounts(generation, classifyAccounts(files));
+    } catch (error) {
+      options.store.failAccountGeneration(generation);
+      throw error;
+    }
   };
 
   const queryCurrentPage = async (accountIds: string[]): Promise<void> => {

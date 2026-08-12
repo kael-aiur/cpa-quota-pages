@@ -98,4 +98,38 @@ describe('quota store', () => {
     expect(() => store.beginAccountGeneration()).not.toThrow();
     expect(seen.at(-1)).toBe(2);
   });
+
+  it('does not retain a loading quota across account generations', () => {
+    const store = createQuotaStore();
+    const first = store.beginAccountGeneration();
+    const firstAccount = { ...account('a'), file: { name: 'a', provider: 'claude', authIndex: 'one' } };
+    store.replaceAccounts(first, [firstAccount]);
+    store.setQuota('a', first, { status: 'loading' });
+    const second = store.beginAccountGeneration();
+    store.replaceAccounts(second, [firstAccount]);
+    expect(store.getState().quotaCache.has('a')).toBe(false);
+    expect(store.setQuota('a', first, success({ value: 1 }))).toBe(false);
+  });
+
+  it('rejects unsupported nested quota values without changing state', () => {
+    const store = createQuotaStore();
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [account('a')]);
+    expect(() => store.setQuota('a', generation, success({ windows: [new Date()] }))).toThrow(TypeError);
+    expect(store.getState().quotaCache.has('a')).toBe(false);
+    expect(() => store.setQuota('a', generation, success({ windows: [new Map([['value', 1]])] }))).toThrow(TypeError);
+    expect(store.getState().quotaCache.has('a')).toBe(false);
+  });
+
+  it('bounds malicious reentrant listeners and remains usable', () => {
+    const store = createQuotaStore();
+    let calls = 0;
+    store.subscribe(() => {
+      calls += 1;
+      store.beginAccountGeneration();
+    });
+    expect(() => store.beginAccountGeneration()).not.toThrow();
+    expect(calls).toBeLessThanOrEqual(100);
+    expect(store.beginAccountGeneration()).toBeGreaterThan(100);
+  });
 });

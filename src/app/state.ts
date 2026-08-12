@@ -41,6 +41,7 @@ export interface QuotaStore {
   subscribe(listener: (state: Readonly<AppState>) => void): () => void;
   beginAccountGeneration(): number;
   replaceAccounts(generation: number, accounts: AccountEntry[]): boolean;
+  failAccountGeneration(generation: number): boolean;
   setQuota(accountId: string, generation: number, quota: QuotaLoadState): boolean;
   setQuotaBatch(generation: number, updates: ReadonlyMap<string, QuotaLoadState>): boolean;
   setBatchLoading(loading: boolean): void;
@@ -48,6 +49,7 @@ export interface QuotaStore {
   destroy(): void;
 }
 
+const MAX_PUBLISH_PASSES = 100;
 type PlainObject = Record<string, unknown>;
 
 function isPlainObject(value: object): value is PlainObject {
@@ -58,6 +60,9 @@ function isPlainObject(value: object): value is PlainObject {
 function deepClone<T>(value: T, seen = new WeakMap<object, unknown>()): T {
   if (value === null || typeof value !== 'object') return value;
   const object = value as object;
+  if (value instanceof Date || value instanceof Map || value instanceof Set || !isPlainObject(object) && !Array.isArray(value)) {
+    throw new TypeError('Quota data must contain only JSON-like plain objects, arrays, and primitives');
+  }
   const existing = seen.get(object);
   if (existing !== undefined) return existing as T;
   if (Array.isArray(value)) {
@@ -66,13 +71,6 @@ function deepClone<T>(value: T, seen = new WeakMap<object, unknown>()): T {
     for (const item of value) copy.push(deepClone(item, seen));
     return copy as T;
   }
-  if (value instanceof Map) {
-    const copy = new Map<unknown, unknown>();
-    seen.set(object, copy);
-    for (const [key, item] of value) copy.set(deepClone(key, seen), deepClone(item, seen));
-    return copy as T;
-  }
-  if (!isPlainObject(object)) return value;
   const copy: PlainObject = Object.create(Object.getPrototypeOf(object));
   seen.set(object, copy);
   for (const [key, item] of Object.entries(value)) copy[key] = deepClone(item, seen);
@@ -126,14 +124,23 @@ function accountFingerprint(account: AccountEntry): string {
   ]);
 }
 
+function cloneQuota(quota: QuotaLoadState): QuotaLoadState {
+  if (quota.status === 'success') return { status: 'success', data: deepClone(quota.data) };
+  if (quota.status === 'error') return { status: 'error', error: quota.error };
+  return { status: quota.status };
+}
+
 function snapshot(state: AppState): Readonly<AppState> {
-  const cloned = deepClone(state);
-  cloned.accounts = deepFreeze(cloned.accounts);
-  cloned.auth = deepFreeze(cloned.auth);
+  const accounts = deepFreeze(deepClone(state.accounts));
+  const auth = deepFreeze(deepClone(state.auth));
   const quotaCache = new Map<string, QuotaLoadState>();
-  for (const [id, quota] of cloned.quotaCache) quotaCache.set(id, deepFreeze(quota));
-  cloned.quotaCache = readonlyMap(quotaCache);
-  return Object.freeze(cloned);
+  for (const [id, quota] of state.quotaCache) quotaCache.set(id, deepFreeze(cloneQuota(quota)));
+  return Object.freeze({
+    ...state,
+    accounts,
+    auth,
+    quotaCache: readonlyMap(quotaCache),
+  });
 }
 
 export function createQuotaStore(): QuotaStore {
@@ -163,8 +170,10 @@ export function createQuotaStore(): QuotaStore {
     }
     publishing = true;
     try {
+      let passes = 0;
       do {
         pendingPublish = false;
+        passes += 1;
         const published = currentSnapshot;
         for (const listener of Array.from(listeners)) {
           try {
@@ -174,7 +183,7 @@ export function createQuotaStore(): QuotaStore {
           }
           if (pendingPublish) break;
         }
-      } while (pendingPublish && !destroyed);
+      } while (pendingPublish && !destroyed && passes < MAX_PUBLISH_PASSES);
     } finally {
       publishing = false;
     }
@@ -198,7 +207,7 @@ export function createQuotaStore(): QuotaStore {
       const nextFingerprints = new Map(accounts.map((account) => [account.id, accountFingerprint(account)]));
       const quotaCache = new Map<string, QuotaLoadState>();
       for (const [id, quota] of state.quotaCache) {
-        if (fingerprints.get(id) === nextFingerprints.get(id)) quotaCache.set(id, deepClone(quota));
+        if ((quota.status === 'success' || quota.status === 'error') && fingerprints.get(id) === nextFingerprints.get(id)) quotaCache.set(id, cloneQuota(quota));
       }
       state = { ...state, accounts: deepClone(accounts), quotaCache };
       fingerprints.clear();
@@ -206,10 +215,18 @@ export function createQuotaStore(): QuotaStore {
       publish();
       return true;
     },
+    failAccountGeneration(generation) {
+      if (destroyed || generation !== state.generation) return false;
+      const quotaCache = new Map(state.quotaCache);
+      for (const [id, quota] of quotaCache) if (quota.status === 'loading') quotaCache.delete(id);
+      state = { ...state, quotaCache, batchLoading: false };
+      publish();
+      return true;
+    },
     setQuota(accountId, generation, quota) {
       if (destroyed || generation !== state.generation || !state.accounts.some((account) => account.id === accountId)) return false;
       const quotaCache = new Map(state.quotaCache);
-      quotaCache.set(accountId, deepClone(quota));
+      quotaCache.set(accountId, cloneQuota(quota));
       state = { ...state, quotaCache };
       publish();
       return true;
@@ -218,7 +235,7 @@ export function createQuotaStore(): QuotaStore {
       if (destroyed || generation !== state.generation) return false;
       const quotaCache = new Map(state.quotaCache);
       for (const [accountId, quota] of updates) {
-        if (state.accounts.some((account) => account.id === accountId)) quotaCache.set(accountId, deepClone(quota));
+        if (state.accounts.some((account) => account.id === accountId)) quotaCache.set(accountId, cloneQuota(quota));
       }
       state = { ...state, quotaCache };
       publish();
