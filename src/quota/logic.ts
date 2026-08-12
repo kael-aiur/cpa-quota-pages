@@ -3,6 +3,8 @@ import { isDisabled, normalizeProvider } from '../providers/shared';
 import type { Provider } from '../providers/types';
 import type { AccountEntry, Pagination, SortMode } from './types';
 
+const DEFAULT_PAGE_SIZE = 20;
+
 const PROVIDER_ORDER: Record<Provider, number> = {
   claude: 0,
   antigravity: 1,
@@ -47,8 +49,11 @@ export function sortAccounts(
     .map(({ entry }) => entry);
 }
 
-export function paginate<T>(items: T[], requestedPage: number, pageSize = 20): Pagination<T> {
-  const normalizedPageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.floor(pageSize) : 20;
+export function paginate<T>(items: T[], requestedPage: number, pageSize = DEFAULT_PAGE_SIZE): Pagination<T> {
+  const flooredPageSize = Math.floor(pageSize);
+  const normalizedPageSize = Number.isFinite(flooredPageSize) && flooredPageSize >= 1
+    ? flooredPageSize
+    : DEFAULT_PAGE_SIZE;
   const totalItems = items.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / normalizedPageSize));
   const page = Math.min(totalPages, Math.max(1, Number.isFinite(requestedPage) ? Math.floor(requestedPage) : 1));

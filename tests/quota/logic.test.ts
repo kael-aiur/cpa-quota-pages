@@ -63,10 +63,30 @@ describe('quota account logic', () => {
     expect(page.totalPages).toBe(2);
   });
 
+  it('keeps runtime-only and unavailable accounts when they are not disabled', () => {
+    const entries = classifyAccounts([
+      file('runtime-only', { provider: 'claude', runtimeOnly: true }),
+      file('runtime-only-snake', { provider: 'codex', runtime_only: true }),
+      file('unavailable', { provider: 'xai', unavailable: true }),
+    ]);
+
+    expect(entries.map((entry) => entry.id)).toEqual(['runtime-only', 'runtime-only-snake', 'unavailable']);
+  });
+
   it('uses twenty items by default and clamps requested pages', () => {
     const items = Array.from({ length: 41 }, (_, index) => index);
     expect(paginate(items, 0)).toMatchObject({ page: 1, pageSize: 20, totalItems: 41, totalPages: 3 });
     expect(paginate(items, 99).page).toBe(3);
     expect(paginate([], 4)).toMatchObject({ page: 1, totalItems: 0, totalPages: 1, items: [] });
+  });
+
+  it('falls back to the default page size for fractional and non-finite page sizes', () => {
+    const items = Array.from({ length: 41 }, (_, index) => index);
+    for (const invalidPageSize of [0.5, Number.NaN, Number.POSITIVE_INFINITY, -1]) {
+      const result = paginate(items, 2, invalidPageSize);
+      expect(result.pageSize).toBe(20);
+      expect(result.totalPages).toBe(3);
+      expect(result.items).toEqual(items.slice(20, 40));
+    }
   });
 });
