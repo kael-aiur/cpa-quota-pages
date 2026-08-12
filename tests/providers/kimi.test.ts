@@ -93,6 +93,50 @@ describe('Kimi quota parser', () => {
     expect(data.windows).toHaveLength(1);
     expect(data.windows[0]).toMatchObject({ used: 3, limit: 10, remainingPercent: 70 });
   });
+
+  it('falls back from invalid detail aliases to valid outer fields', () => {
+    const data = parseKimiQuota({ limits: [{
+      name: 'Outer label',
+      used: 12,
+      limit: 100,
+      remaining: 88,
+      resetIn: 60,
+      duration: 30,
+      timeUnit: 'TIME_UNIT_MINUTE',
+      detail: {
+        name: '   ',
+        used: 'invalid',
+        limit: '',
+        remaining: 'invalid',
+        resetTime: '',
+        resetIn: '',
+        duration: '',
+        timeUnit: '',
+      },
+    }] }, nowMs);
+
+    expect(data.windows[0]).toMatchObject({
+      label: 'Outer label',
+      used: 12,
+      limit: 100,
+      remainingPercent: 88,
+      resetAtMs: nowMs + 60_000,
+      periodHours: 0.5,
+    });
+  });
+
+  it('keeps repeated labels while assigning unique stable IDs', () => {
+    const payload = { limits: [
+      { name: 'Same', detail: { used: 1, limit: 10 } },
+      { name: 'Same', detail: { used: 2, limit: 10 } },
+    ] };
+    const first = parseKimiQuota(payload, nowMs).windows;
+    const second = parseKimiQuota(payload, nowMs).windows;
+
+    expect(first.map(({ label }) => label)).toEqual(['Same', 'Same']);
+    expect(first.map(({ id }) => id)).toEqual(['limit-0', 'limit-1']);
+    expect(second.map(({ id }) => id)).toEqual(first.map(({ id }) => id));
+  });
 });
 
 describe('Kimi quota adapter', () => {
@@ -125,5 +169,23 @@ describe('Kimi quota adapter', () => {
       result: { body: { error: { message: 'rate limited' } } },
     });
     expect(error).toHaveProperty('message', 'rate limited');
+  });
+
+  it('propagates caller AbortError without wrapping it', async () => {
+    const abortError = new DOMException('aborted', 'AbortError');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async () => {
+      throw abortError;
+    });
+
+    await expect(queryKimiQuota(file, { apiCall })).rejects.toBe(abortError);
+  });
+
+  it('accepts a valid snake auth index when camel authIndex is blank', async () => {
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async () => result(usage));
+
+    await queryKimiQuota({ ...file, authIndex: '', auth_index: 'idx-snake' }, { apiCall });
+    await queryKimiQuota({ ...file, authIndex: '   ', auth_index: 'idx-snake' }, { apiCall });
+
+    expect(apiCall.mock.calls.map(([request]) => request.authIndex)).toEqual(['idx-snake', 'idx-snake']);
   });
 });

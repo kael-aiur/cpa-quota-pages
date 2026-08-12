@@ -10,9 +10,10 @@ export const KIMI_REQUEST_HEADERS = {
 };
 
 function authIndex(file: AuthFile): string {
-  const value = file.authIndex ?? file.auth_index;
-  if (typeof value === 'string' && value.trim()) return value.trim();
-  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  for (const value of [file.authIndex, file.auth_index]) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
+  }
   throw new Error('Kimi auth file is missing auth index');
 }
 

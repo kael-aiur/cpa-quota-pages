@@ -33,6 +33,14 @@ function integerValue(value: unknown): number | null {
   return parsed === null ? null : Math.floor(parsed);
 }
 
+function firstValue<T>(values: unknown[], normalize: (value: unknown) => T | null): T | null {
+  for (const value of values) {
+    const normalized = normalize(value);
+    if (normalized !== null) return normalized;
+  }
+  return null;
+}
+
 function text(value: unknown): string | null {
   if (typeof value !== 'string') return null;
   const normalized = value.trim();
@@ -95,14 +103,17 @@ function parseDate(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function resetAt(detail: RecordValue, nowMs: number): number | null {
+function resetAt(detail: RecordValue, item: RecordValue, nowMs: number): number | null {
   for (const key of ['reset_at', 'resetAt', 'reset_time', 'resetTime']) {
-    const absolute = parseDate(detail[key]);
+    const absolute = firstValue([detail[key], item[key]], parseDate);
     if (absolute !== null) return absolute;
   }
   for (const key of ['reset_in', 'resetIn', 'ttl']) {
-    const relative = numberValue(detail[key]);
-    if (relative !== null && relative > 0) return nowMs + relative * 1000;
+    const relative = firstValue([detail[key], item[key]], (value) => {
+      const parsed = numberValue(value);
+      return parsed !== null && parsed > 0 ? parsed : null;
+    });
+    if (relative !== null) return nowMs + relative * 1000;
   }
   return null;
 }
@@ -114,10 +125,11 @@ function labelFor(
   unit: KimiTimeUnit,
   index: number,
 ): string {
-  for (const candidate of [item.name, item.title, item.scope, detail.name, detail.title, detail.scope]) {
-    const label = text(candidate);
-    if (label) return label;
-  }
+  const label = firstValue(
+    [detail.name, detail.title, detail.scope, item.name, item.title, item.scope],
+    text,
+  );
+  if (label) return label;
   if (duration !== null && duration > 0) return `${durationToken(duration, unit)} limit`;
   return `Limit ${index + 1}`;
 }
@@ -125,19 +137,20 @@ function labelFor(
 function parseWindow(
   detail: RecordValue,
   item: RecordValue,
+  window: RecordValue,
   index: number,
   nowMs: number,
   fallbackLabel?: string,
 ): KimiQuotaWindow | null {
-  const limit = integerValue(detail.limit);
-  let used = integerValue(detail.used);
-  const remaining = integerValue(detail.remaining);
+  const limit = firstValue([detail.limit, item.limit], integerValue);
+  let used = firstValue([detail.used, item.used], integerValue);
+  const remaining = firstValue([detail.remaining, item.remaining], integerValue);
   if (used === null && remaining !== null && limit !== null) used = limit - remaining;
   if (used === null && limit === null) return null;
 
-  const rawDuration = item.duration ?? detail.duration;
-  const duration = integerValue(rawDuration);
-  const unit = normalizeTimeUnit(item.timeUnit ?? detail.timeUnit);
+  const duration = firstValue([window.duration, detail.duration, item.duration], integerValue);
+  const rawTimeUnit = firstValue([window.timeUnit, detail.timeUnit, item.timeUnit], text);
+  const unit = normalizeTimeUnit(rawTimeUnit);
   const label = fallbackLabel ?? labelFor(item, detail, duration, unit, index);
   const resolvedLimit = limit ?? 0;
   const resolvedUsed = used ?? 0;
@@ -158,7 +171,7 @@ function parseWindow(
     limit: resolvedLimit,
     usedPercent,
     remainingPercent,
-    resetAtMs: resetAt(detail, nowMs),
+    resetAtMs: resetAt(detail, item, nowMs),
     periodHours,
   };
 }
@@ -174,14 +187,13 @@ export function parseKimiQuota(payload: unknown, nowMs: number): KimiQuotaData {
     if (!item) return;
     const detail = record(item.detail) ?? item;
     const window = record(item.window) ?? {};
-    const merged = { ...item, ...detail };
-    const parsedWindow = parseWindow(merged, { ...item, ...window }, index, nowMs);
+    const parsedWindow = parseWindow(detail, item, window, index, nowMs);
     if (parsedWindow) windows.push(parsedWindow);
   });
 
   const usage = record(parsed.usage);
   if (usage) {
-    const summary = parseWindow(usage, {}, windows.length, nowMs, 'Weekly');
+    const summary = parseWindow(usage, {}, {}, windows.length, nowMs, 'Weekly');
     if (summary) windows.push({ ...summary, id: 'summary' });
   }
 
