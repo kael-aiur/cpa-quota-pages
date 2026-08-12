@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => {
       emptyOutDir: false,
       cssCodeSplit: false,
       rollupOptions: {
-        input: resolve(process.cwd(), target.input),
+        input: { [target.fileName]: resolve(process.cwd(), target.input) },
         output: { inlineDynamicImports: true },
       },
     },
