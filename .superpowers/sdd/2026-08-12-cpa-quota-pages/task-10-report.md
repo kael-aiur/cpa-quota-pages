@@ -1,6 +1,13 @@
 # Task 10 Report
 
-Status: complete
+Status: complete (revision 1)
+
+Revision 1 fixes:
+
+- Removed the incorrect `status: 'success'` gate from recovery and timeline pure models; null/non-object quota remains empty, while normalized Provider data is accepted directly.
+- Added typed normalized Claude, Antigravity, Codex, Kimi, and xAI test fixtures without synthetic load-state fields.
+- Hardened minute-clock timeout reentrancy with generation checks and post-notify listener/timer checks; unsubscribe, destroy, and visibility recalibration cannot leave a stale interval.
+- Added reentrancy and timer-counter coverage.
 
 Implemented pure quota time-model modules:
 

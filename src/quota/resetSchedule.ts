@@ -4,10 +4,8 @@ export interface RecoveryInstant { id: string; atMs: number; kind: 'window' | 'c
 
 const HOUR_MS = 60 * 60 * 1000;
 const usable = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-const stateOk = (quota: unknown): quota is Record<string, unknown> => {
-  if (!quota || typeof quota !== 'object') return false;
-  return (quota as { status?: unknown }).status === 'success';
-};
+const recordOf = (quota: unknown): Record<string, unknown> | null =>
+  quota && typeof quota === 'object' ? quota as Record<string, unknown> : null;
 const rows = (value: unknown, prefix: string): RecoveryInstant[] => {
   if (!Array.isArray(value)) return [];
   return value.flatMap((row, index) => {
@@ -19,8 +17,8 @@ const rows = (value: unknown, prefix: string): RecoveryInstant[] => {
 };
 
 export function collectRecoveryInstants(provider: Provider, quota: unknown): RecoveryInstant[] {
-  if (!stateOk(quota)) return [];
-  const record = quota as Record<string, unknown>;
+  const record = recordOf(quota);
+  if (!record) return [];
   if (provider === 'claude') return rows(record.windows, 'window');
   if (provider === 'antigravity') {
     const groups = Array.isArray(record.groups) ? record.groups : [];

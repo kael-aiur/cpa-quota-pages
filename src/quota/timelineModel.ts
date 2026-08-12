@@ -33,7 +33,7 @@ function pick(windows: Array<Record<string, unknown>>, maxPeriodHours?: number):
 
 export function buildTimelineLane(input: TimelineLaneInput): TimelineLane {
   const lane = empty(input);
-  if (!input.quota || typeof input.quota !== 'object' || (input.quota as Record<string, unknown>).status !== 'success') return lane;
+  if (!input.quota || typeof input.quota !== 'object') return lane;
   const quota = input.quota as Record<string, unknown>;
   let windows: Array<Record<string, unknown>> = [];
   let chosen: Record<string, unknown> | null = null;

@@ -16,19 +16,40 @@ export function createMinuteClock(options: MinuteClockOptions = {}): MinuteClock
   const now = options.now ?? Date.now;
   const setTimeoutFn = options.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
   const setIntervalFn = options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
-  const clearTimer = options.clearTimer ?? ((id) => { clearTimeout(id as ReturnType<typeof setTimeout>); clearInterval(id as ReturnType<typeof setInterval>); });
+  const clearTimer = options.clearTimer ?? ((id) => {
+    clearTimeout(id as ReturnType<typeof setTimeout>);
+    clearInterval(id as ReturnType<typeof setInterval>);
+  });
   const doc = options.document ?? (typeof document === 'undefined' ? undefined : document);
   const listeners = new Set<() => void>();
   let snapshot = now();
   let timer: unknown = null;
+  let generation = 0;
   let destroyed = false;
   let visibility: (() => void) | null = null;
 
-  const notify = () => { snapshot = now(); listeners.forEach((listener) => listener()); };
+  const notify = () => {
+    snapshot = now();
+    listeners.forEach((listener) => listener());
+  };
   const schedule = () => {
+    generation += 1;
+    const scheduledGeneration = generation;
     if (timer !== null) clearTimer(timer);
     const delay = 60_000 - (now() % 60_000);
-    timer = setTimeoutFn(() => { notify(); timer = setIntervalFn(notify, 60_000); }, delay);
+    timer = setTimeoutFn(() => {
+      if (destroyed || generation !== scheduledGeneration) return;
+      timer = null;
+      notify();
+      if (destroyed || listeners.size === 0 || generation !== scheduledGeneration || timer !== null) return;
+      timer = setIntervalFn(notify, 60_000);
+    }, delay);
+  };
+  const recalibrate = () => {
+    if (listeners.size > 0 && !destroyed) {
+      snapshot = now();
+      schedule();
+    }
   };
   const start = () => {
     snapshot = now();
@@ -39,13 +60,16 @@ export function createMinuteClock(options: MinuteClockOptions = {}): MinuteClock
     }
   };
   const stop = () => {
-    if (timer !== null) { clearTimer(timer); timer = null; }
+    generation += 1;
+    if (timer !== null) {
+      clearTimer(timer);
+      timer = null;
+    }
     if (doc && visibility !== null) {
       doc.removeEventListener('visibilitychange', visibility);
       visibility = null;
     }
   };
-  const recalibrate = () => { if (listeners.size > 0 && !destroyed) start(); };
 
   return {
     subscribe(listener) {
@@ -53,9 +77,19 @@ export function createMinuteClock(options: MinuteClockOptions = {}): MinuteClock
       listeners.add(listener);
       if (listeners.size === 1) start();
       let active = true;
-      return () => { if (!active) return; active = false; listeners.delete(listener); if (listeners.size === 0) stop(); };
+      return () => {
+        if (!active) return;
+        active = false;
+        listeners.delete(listener);
+        if (listeners.size === 0) stop();
+      };
     },
     getSnapshot: () => snapshot,
-    destroy() { if (destroyed) return; destroyed = true; listeners.clear(); stop(); if (doc && visibility) doc.removeEventListener('visibilitychange', visibility); visibility = null; },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      listeners.clear();
+      stop();
+    },
   };
 }

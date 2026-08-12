@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildTimelineLane, projectLane, projectResetCredits, timelineSpan } from '../../src/quota/timelineModel';
+import type { ClaudeQuotaData } from '../../src/providers/claude/types';
 
 const hour = 60 * 60 * 1000;
 const now = new Date(2026, 6, 29, 12).getTime();
@@ -19,7 +20,7 @@ describe('timeline model', () => {
     const span = timelineSpan('weekly', 0, now);
     const lane = buildTimelineLane({
       name: 'a', displayName: 'A', provider: 'claude',
-      quota: { status: 'success', windows: [{ id: 'weekly', label: 'Weekly', usedPercent: 40, resetAtMs: now + 2 * dayMs(), periodHours: 168 }] },
+      quota: { windows: [{ id: 'weekly', label: 'Weekly', usedPercent: 40, remainingPercent: 60, resetAtMs: now + 2 * dayMs(), periodHours: 168 }], extraUsage: null, planType: null } satisfies ClaudeQuotaData,
       maxPeriodHours: 14 * 24,
     });
     const windows = projectLane(lane, span.startMs, span.endMs, now + 3 * dayMs(), 'weekly');
@@ -31,17 +32,17 @@ describe('timeline model', () => {
 
   it('filters session timelines to true five-hour windows', () => {
     const span = timelineSpan('session', 0, now);
-    const weekly = buildTimelineLane({ name: 'w', displayName: 'W', provider: 'claude', quota: { status: 'success', windows: [{ id: 'weekly', resetAtMs: now + hour, periodHours: 168 }] } });
+    const weekly = buildTimelineLane({ name: 'w', displayName: 'W', provider: 'claude', quota: {windows: [{ id: 'weekly', resetAtMs: now + hour, periodHours: 168 }] } });
     expect(projectLane(weekly, span.startMs, span.endMs, now, 'session')).toEqual([]);
-    const session = buildTimelineLane({ name: 's', displayName: 'S', provider: 'claude', quota: { status: 'success', windows: [{ id: 'session', resetAtMs: now + hour, periodHours: 5 }] } });
+    const session = buildTimelineLane({ name: 's', displayName: 'S', provider: 'claude', quota: {windows: [{ id: 'session', resetAtMs: now + hour, periodHours: 5 }] } });
     expect(projectLane(session, span.startMs, span.endMs, now, 'session').length).toBeGreaterThan(0);
   });
 
   it('projects only live credit expiry ticks and supports empty lanes', () => {
     const span = timelineSpan('weekly', 0, now);
-    const lane = buildTimelineLane({ name: 'c', displayName: 'C', provider: 'codex', quota: { status: 'success', windows: [{ id: 'weekly', resetAtMs: now + dayMs(), periodHours: 168 }], credits: [{ id: 'credit', status: 'available', grantedAtMs: now, expiresAtMs: now + 2 * dayMs() }, { id: 'past', status: 'available', expiresAtMs: now - hour }] } });
+    const lane = buildTimelineLane({ name: 'c', displayName: 'C', provider: 'codex', quota: {windows: [{ id: 'weekly', resetAtMs: now + dayMs(), periodHours: 168 }], credits: [{ id: 'credit', resetType: 'codex_rate_limits', status: 'available', grantedAtMs: now, expiresAtMs: now + 2 * dayMs() }, { id: 'past', resetType: 'codex_rate_limits', status: 'available', expiresAtMs: now - hour }] } });
     expect(projectResetCredits(lane, span.startMs, span.endMs, now).map((credit) => credit.id)).toEqual(['credit']);
-    expect(buildTimelineLane({ name: 'e', displayName: 'E', provider: 'xai', quota: { status: 'success', billing: { periodType: 'monthly', resetAtMs: now + dayMs() } } }).anchorMs).toBeNull();
+    expect(buildTimelineLane({ name: 'e', displayName: 'E', provider: 'xai', quota: {billing: { periodType: 'monthly', resetAtMs: now + dayMs() } } }).anchorMs).toBeNull();
   });
 });
 
