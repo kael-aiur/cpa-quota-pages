@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import fixture from '../fixtures/auth-files/duplicates.json';
-import { createCpaApi } from '../../src/api/authFiles';
+import { createCpaApi, normalizeAuthFilesResponse } from '../../src/api/authFiles';
 import type { AuthenticatedFetch } from '../../src/auth/types';
+import type { JsonRecord } from '../../src/api/types';
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -10,6 +11,35 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe('CPA auth-files boundary', () => {
+  it('preserves typed raw nested fields and auth_index after normalization', () => {
+    const raw: JsonRecord = {
+      name: 'typed.json',
+      auth_index: 'raw-index',
+      id: 'credential-id',
+      metadata: { account: 'metadata-account' },
+      attributes: { project: 'metadata-project' },
+      id_token: { email: 'user@example.com' },
+      project_id: 'project-id',
+      status: 'active',
+      size: 42,
+    };
+
+    const [file] = normalizeAuthFilesResponse({ files: [raw] });
+    const metadata = file?.metadata;
+    const attributes = file?.attributes;
+    const idToken = file?.id_token;
+
+    expect(file?.auth_index).toBe('raw-index');
+    expect(file?.authIndex).toBe('raw-index');
+    expect(file?.id).toBe('credential-id');
+    expect(metadata?.account).toBe('metadata-account');
+    expect(attributes?.project).toBe('metadata-project');
+    expect(idToken).toEqual({ email: 'user@example.com' });
+    expect(file?.project_id).toBe('project-id');
+    expect(file?.status).toBe('active');
+    expect(file?.size).toBe(42);
+  });
+
   it('deduplicates by name, merges missing fields, keeps records, and sorts filenames', async () => {
     const request = vi.fn<AuthenticatedFetch>(async () => jsonResponse({ files: fixture }));
     const api = createCpaApi(request);

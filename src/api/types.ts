@@ -4,17 +4,26 @@ export type JsonRecord = Record<string, unknown>;
 
 export interface AuthFile extends JsonRecord {
   name: string;
+  id?: string;
   provider?: string;
   type?: string;
   source?: string;
   path?: string;
+  account?: string;
   email?: string;
   projectId?: string;
+  project_id?: string;
   authIndex?: string | number | null;
+  auth_index?: string | number | null;
+  metadata?: JsonRecord;
+  attributes?: JsonRecord;
+  id_token?: JsonRecord | string;
   runtimeOnly?: boolean | string;
   runtime_only?: boolean | string;
   disabled?: boolean | string | number;
   unavailable?: boolean | string | number;
+  status?: string;
+  size?: number;
   modified?: number;
   priority?: number;
   weight?: number;
