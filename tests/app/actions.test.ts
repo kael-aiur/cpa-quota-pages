@@ -3,7 +3,7 @@ import type { CpaApi } from '../../src/api/types';
 import { createQuotaActions } from '../../src/app/actions';
 import { createQuotaStore } from '../../src/app/state';
 import type { AccountEntry } from '../../src/quota/types';
-import type { ProviderQuery } from '../../src/providers/types';
+import type { ProviderQuery, ProviderQuotaResult } from '../../src/providers/types';
 
 const account = (id: string, provider: AccountEntry['provider']): AccountEntry => ({ id, provider, file: { name: id, provider } });
 const result = (id: string, calls: string[], delay = 0): ProviderQuery => async (_file, context) => {
@@ -13,7 +13,7 @@ const result = (id: string, calls: string[], delay = 0): ProviderQuery => async 
     context.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(context.signal?.reason); }, { once: true });
   });
   calls.push(`end:${id}`);
-  return { windows: [{ id, label: id, usedPercent: 1, remainingPercent: 99, resetAtMs: null, periodHours: null }] };
+  return { windows: [{ id, label: id, usedPercent: 1, remainingPercent: 99, resetAtMs: null, periodHours: null }] } as ProviderQuotaResult;
 };
 
 function api(files: AccountEntry[], _calls: string[]): CpaApi {
@@ -48,7 +48,7 @@ describe('quota actions', () => {
       claude: async (file) => {
         calls.push(`start:${file.name}`);
         if (file.name === 'c2') throw new Error('bad');
-        return { windows: [] };
+        return { windows: [] } as ProviderQuotaResult;
       },
       kimi: result('k1', calls),
     };
@@ -67,13 +67,44 @@ describe('quota actions', () => {
     store.replaceAccounts(generation, accounts);
     const controller = new AbortController();
     const query = vi.fn(async (_file, context) => {
-      expect(context.signal).toBe(controller.signal);
-      return { windows: [] };
+      expect(context.signal).not.toBe(controller.signal);
+      expect(context.signal?.aborted).toBe(false);
+      return { windows: [] } as ProviderQuotaResult;
     });
     const actions = createQuotaActions({ api: api(accounts, []), store, signal: controller.signal, providerQueries: { claude: query } });
     await expect(actions.queryCurrentPage(accounts.slice(0, 20).map(({ id }) => id))).resolves.toBeUndefined();
     await expect(actions.queryCurrentPage(['a0'])).resolves.toBeUndefined();
     await expect(actions.queryCurrentPage(accounts.map(({ id }) => id))).rejects.toThrow(/20/);
+    actions.destroy();
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it('propagates caller abort and waits for all groups before releasing batch guard', async () => {
+    const controller = new AbortController();
+    const store = createQuotaStore();
+    const accounts = [account('c1', 'claude'), account('k1', 'kimi')];
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, accounts);
+    let releaseClaude: (() => void) | undefined;
+    let releaseKimi: (() => void) | undefined;
+    const waiting = (release: (fn: () => void) => void, context: { signal?: AbortSignal }) => new Promise<void>((resolve, reject) => {
+      release(() => resolve());
+      context.signal?.addEventListener('abort', () => reject(context.signal?.reason), { once: true });
+    });
+    const queries: Record<string, ProviderQuery> = {
+      claude: async (_file, context) => { await waiting((fn) => { releaseClaude = fn; }, context); return { windows: [] } as ProviderQuotaResult; },
+      kimi: async (_file, context) => { await waiting((fn) => { releaseKimi = fn; }, context); return { windows: [] } as ProviderQuotaResult; },
+    };
+    const actions = createQuotaActions({ api: api(accounts, []), store, signal: controller.signal, providerQueries: queries });
+    const batch = actions.queryCurrentPage(['c1', 'k1']);
+    await vi.waitFor(() => expect(store.getState().batchLoading).toBe(true));
+    controller.abort(new Error('cancelled'));
+    expect(store.getState().batchLoading).toBe(true);
+    releaseClaude?.();
+    releaseKimi?.();
+    await expect(batch).rejects.toThrow('cancelled');
+    expect(store.getState().batchLoading).toBe(false);
+    actions.destroy();
   });
 
   it('does not retry a failed provider query or persist quota outside the store', async () => {

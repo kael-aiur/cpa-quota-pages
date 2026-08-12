@@ -5,7 +5,7 @@ import { createQuotaStore, type QuotaLoadState } from '../../src/app/state';
 const account = (id: string, provider: AccountEntry['provider'] = 'claude'): AccountEntry => ({
   id, provider, file: { name: id, provider },
 });
-const success = (value: unknown): QuotaLoadState => ({ status: 'success', data: value });
+const success = (value: unknown): QuotaLoadState => ({ status: 'success', data: value as Record<string, unknown> });
 
 describe('quota store', () => {
   it('increments account generations and rejects stale writes', () => {
@@ -56,5 +56,46 @@ describe('quota store', () => {
     store.replaceAccounts(generation, [account('a')]);
     expect(calls).toBe(0);
     expect(store.getState().accounts).toEqual([]);
+  });
+
+  it('deeply freezes snapshots and defensively clones quota data', () => {
+    const store = createQuotaStore();
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [account('a')]);
+    const data = { windows: [{ label: 'window' }], nested: { values: [1] }, attributes: { tier: 'pro' } };
+    store.setQuota('a', generation, success(data));
+    data.windows[0].label = 'changed outside';
+    const state = store.getState();
+    const cached = state.quotaCache.get('a');
+    expect(cached?.status).toBe('success');
+    if (cached?.status !== 'success') throw new Error('expected success');
+    expect((cached.data as { windows: { label: string }[] }).windows[0].label).toBe('window');
+    expect(() => ((cached.data as unknown as { nested: { values: number[] } }).nested.values[0] = 2)).toThrow();
+  });
+
+  it('does not retain quota when an account fingerprint changes', () => {
+    const store = createQuotaStore();
+    const first = store.beginAccountGeneration();
+    store.replaceAccounts(first, [{ ...account('a'), file: { name: 'a', provider: 'claude', authIndex: 'one' } }]);
+    store.setQuota('a', first, success({ value: 1 }));
+    const second = store.beginAccountGeneration();
+    store.replaceAccounts(second, [{ ...account('a'), file: { name: 'a', provider: 'claude', authIndex: 'two' } }]);
+    expect(store.getState().quotaCache.has('a')).toBe(false);
+  });
+
+  it('isolates listener failures and publishes the newest state after reentrant mutation', () => {
+    const store = createQuotaStore();
+    const seen: number[] = [];
+    let nested = false;
+    store.subscribe(() => { throw new Error('listener failure'); });
+    store.subscribe((state) => {
+      seen.push(state.generation);
+      if (!nested) {
+        nested = true;
+        store.beginAccountGeneration();
+      }
+    });
+    expect(() => store.beginAccountGeneration()).not.toThrow();
+    expect(seen.at(-1)).toBe(2);
   });
 });

@@ -1,5 +1,10 @@
 import type { AuthenticatedFetch } from '../auth/types';
 import type { ApiCallResult, AuthFile, CpaApi } from '../api/types';
+import type { AntigravityQuotaData } from './antigravity/parser';
+import type { ClaudeQuotaData } from './claude/types';
+import type { CodexQuotaData } from './codex/parser';
+import type { KimiQuotaData } from './kimi/parser';
+import type { XaiQuotaData } from './xai/parser';
 
 export type Provider = 'claude' | 'antigravity' | 'codex' | 'xai' | 'kimi';
 
@@ -31,7 +36,9 @@ export type ProviderQuotaData = {
   [key: string]: unknown;
 };
 
-export type ProviderQuery<T = unknown> = (
+export type ProviderQuotaResult = ClaudeQuotaData | AntigravityQuotaData | CodexQuotaData | KimiQuotaData | XaiQuotaData;
+
+export type ProviderQuery<T extends ProviderQuotaResult = ProviderQuotaResult> = (
   file: AuthFile,
   context: ProviderQueryContext,
 ) => Promise<T>;
