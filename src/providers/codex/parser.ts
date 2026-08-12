@@ -195,17 +195,19 @@ function parseWindow(
   scope: string,
   fallbackPeriod: string | null,
   reached: boolean,
+  scopeIndex: number,
+  windowKind: 'primary' | 'secondary',
 ): QuotaWindow | null {
   const window = record(rawWindow);
   if (!window) return null;
   const explicitHours = periodHours(window.limit_window_seconds ?? window.limitWindowSeconds);
   const period = durationId(explicitHours) ?? fallbackPeriod;
   if (!period) return null;
-  const used = reached || window.limit_reached === true
+  const used = reached || window.limit_reached === true || window.limitReached === true
     ? 100
     : percent(window.used_percent ?? window.usedPercent);
   const resetAtMs = dateMs(window.reset_at ?? window.resetAt);
-  const id = `${slug(scope)}-${period}`;
+  const id = `${slug(scope)}-${period}-${scopeIndex}-${windowKind}`;
   const label = scope === 'rate-limit'
     ? period === '5h' ? 'Five-hour' : period === 'week' ? 'Weekly' : period === 'month' ? 'Monthly' : period
     : `${scope} ${period}`;
@@ -219,7 +221,7 @@ function parseWindow(
   };
 }
 
-function parseScope(value: unknown, scope: string, windows: QuotaWindow[]): void {
+function parseScope(value: unknown, scope: string, scopeIndex: number, windows: QuotaWindow[]): void {
   const entry = record(value);
   if (!entry) return;
   const nested = record(entry.rate_limit ?? entry.rateLimit) ?? entry;
@@ -227,8 +229,8 @@ function parseScope(value: unknown, scope: string, windows: QuotaWindow[]): void
     || nested.limit_reached === true
     || entry.allowed === false
     || nested.allowed === false;
-  const primary = parseWindow(nested.primary_window ?? nested.primaryWindow, scope, '5h', reached);
-  const secondary = parseWindow(nested.secondary_window ?? nested.secondaryWindow, scope, 'week', reached);
+  const primary = parseWindow(nested.primary_window ?? nested.primaryWindow, scope, '5h', reached, scopeIndex, 'primary');
+  const secondary = parseWindow(nested.secondary_window ?? nested.secondaryWindow, scope, 'week', reached, scopeIndex, 'secondary');
   if (primary) windows.push(primary);
   if (secondary) windows.push(secondary);
 }
@@ -287,15 +289,15 @@ export function parseCodexQuota(
 ): CodexQuotaData {
   const body = payload(usage);
   const windows: QuotaWindow[] = [];
-  parseScope(body.rate_limit ?? body.rateLimit, 'rate-limit', windows);
-  parseScope(body.code_review_rate_limit ?? body.codeReviewRateLimit, 'code-review-rate-limit', windows);
+  parseScope(body.rate_limit ?? body.rateLimit, 'rate-limit', 0, windows);
+  parseScope(body.code_review_rate_limit ?? body.codeReviewRateLimit, 'code-review-rate-limit', 1, windows);
   const additionalValue = body.additional_rate_limits ?? body.additionalRateLimits;
   const additional = Array.isArray(additionalValue) ? additionalValue : [];
-  for (const entry of additional) {
+  for (const [additionalIndex, entry] of additional.entries()) {
     const candidate = record(entry);
     if (!candidate) continue;
     const name = text(candidate.limit_name ?? candidate.limitName ?? candidate.metered_feature ?? candidate.meteredFeature) ?? 'additional-rate-limit';
-    parseScope(candidate, name, windows);
+    parseScope(candidate, name, additionalIndex + 2, windows);
   }
   const parsedCredits = parseCredits(creditDetails, nowMs, body);
   return {

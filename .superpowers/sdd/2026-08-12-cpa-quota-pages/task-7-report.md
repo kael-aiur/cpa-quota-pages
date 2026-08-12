@@ -33,6 +33,19 @@
 - `git diff --check`：passed。
 - negative grep：`src/providers` 无 `/rate-limit-reset-credits/consume` 输出。
 
+## 修复轮次 1
+
+- 修复窗口 ID：加入稳定的响应来源 discriminator（scope/index + primary/secondary），保留 slug scope 与 period；重复 Spark、slug collision、同周期窗口现在 ID 唯一且同 payload 重复解析稳定。
+- 支持 `limitReached` camel alias，补充 literal URL、details URL、User-Agent、`Chatgpt-Account-Id` header 断言，避免测试仅自引用导出常量。
+- 保留 canonical nested JWT、caller abort、usage reset-credit count fallback 与 consume endpoint isolation 行为。
+
+## 修复轮次 1 验证
+
+- 红：新增 ID/camel alias/literal contract 测试后，定向测试先失败；窗口仍为旧 ID，camel `limitReached` 未推导 100%，且测试暴露常量自引用问题。
+- 绿：`npm test -- tests/providers/codex.test.ts`：13 tests passed。
+- `npm test`：待修复轮次完成后重新运行。
+- `npm run typecheck`、`git diff --check`、negative grep：待最终提交前重新运行。
+
 ## Concerns
 
 - 订阅 renewal 与 reset-credit 详情依赖后端/认证 payload 的字段存在；未知字段不会阻塞主 quota。
