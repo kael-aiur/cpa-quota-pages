@@ -1,0 +1,28 @@
+{
+  "five_hour": { "utilization": 25, "resets_at": "2026-08-12T15:00:00.000Z" },
+  "seven_day": { "utilization": 40, "resets_at": "2026-08-18T12:00:00.000Z" },
+  "limits": [
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 64,
+      "resets_at": "2026-08-17T12:00:00.000Z",
+      "is_active": true,
+      "scope": { "model": { "id": "claude-fable-5", "display_name": "Fable 5" } }
+    },
+    {
+      "kind": "weekly_scoped",
+      "group": "weekly",
+      "percent": 12,
+      "resets_at": "2026-08-19T12:00:00.000Z",
+      "is_active": false,
+      "scope": { "model": { "display_name": "Fable" } }
+    }
+  ],
+  "extra_usage": {
+    "is_enabled": true,
+    "monthly_limit": 200,
+    "used_credits": 25,
+    "utilization": 12.5
+  }
+}
