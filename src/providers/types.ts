@@ -31,7 +31,7 @@ export type ProviderQuotaData = {
   [key: string]: unknown;
 };
 
-export type ProviderQuery<T extends ProviderQuotaData = ProviderQuotaData> = (
+export type ProviderQuery<T = unknown> = (
   file: AuthFile,
   context: ProviderQueryContext,
 ) => Promise<T>;
