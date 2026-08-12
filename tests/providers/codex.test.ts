@@ -23,10 +23,10 @@ describe('Codex parser', () => {
     expect(data.planType).toBe('pro');
     expect(data.subscriptionActiveUntil).toBe(Date.parse('2026-08-20T00:00:00Z'));
     expect(data.accountId).toBe('acct-123');
-    expect(data.windows.map((window) => window.id)).toEqual([
-      'rate-limit-5h-0-primary', 'rate-limit-week-0-secondary',
-      'code-review-rate-limit-month-1-primary', 'spark-5h-2-primary',
-    ]);
+    expect(data.windows[0]?.id).toBe('rate-limit-5h-primary-standard');
+    expect(data.windows[1]?.id).toBe('rate-limit-week-secondary-standard');
+    expect(data.windows[2]?.id).toBe('code-review-rate-limit-month-primary-standard');
+    expect(data.windows[3]?.id).toMatch(/^spark-5h-primary-[0-9a-f]{6}$/);
     expect(data.windows[0]?.usedPercent).toBe(100);
     expect(data.windows[2]?.periodHours).toBe(720);
     expect(data.credits.map((credit) => credit.id)).toEqual(['valid-1', 'valid-2']);
@@ -39,7 +39,7 @@ describe('Codex parser', () => {
       primary_window: { used_percent: 10, reset_at: '2026-08-13T00:00:00Z' },
       secondary_window: { used_percent: 20, reset_at: '2026-08-19T00:00:00Z' },
     } }, null, { name: 'x', authIndex: 'i', plan_type: 'plus' }, nowMs);
-    expect(data.windows.map((window) => window.id)).toEqual(['rate-limit-5h-0-primary', 'rate-limit-week-0-secondary']);
+    expect(data.windows.map((window) => window.id)).toEqual(['rate-limit-5h-primary-standard', 'rate-limit-week-secondary-standard']);
     expect(data.planType).toBe('plus');
   });
 
@@ -48,13 +48,14 @@ describe('Codex parser', () => {
       allowed: false,
       primary_window: { limit_window_seconds: 744 * 3600, reset_at: '2026-09-12T00:00:00Z' },
     } }, null, { name: 'x', authIndex: 'i' }, nowMs);
-    expect(data.windows[0]).toMatchObject({ id: 'rate-limit-month-0-primary', usedPercent: 100 });
+    expect(data.windows[0]).toMatchObject({ id: 'rate-limit-month-primary-standard', usedPercent: 100 });
     expect(data.windows[0]?.periodHours).toBe(744);
   });
 
   it('treats camel limitReached as reached', () => {
     const data = parseCodexQuota({ rate_limit: {
-      primary_window: { limit_window_seconds: 18000, limitReached: true },
+      limitReached: true,
+      primary_window: { limit_window_seconds: 18000, used_percent: 20 },
     } }, null, { name: 'x', authIndex: 'i' }, nowMs);
     expect(data.windows[0]?.usedPercent).toBe(100);
   });
@@ -69,9 +70,17 @@ describe('Codex parser', () => {
     };
     const first = parseCodexQuota(usageWithDuplicates, null, { name: 'x', authIndex: 'i' }, nowMs).windows.map((window) => window.id);
     const second = parseCodexQuota(usageWithDuplicates, null, { name: 'x', authIndex: 'i' }, nowMs).windows.map((window) => window.id);
-    expect(first).toEqual(['spark-5h-2-primary', 'spark-5h-3-primary', 'spark-5h-4-primary']);
+    expect(first[0]).toMatch(/^spark-5h-primary-[0-9a-f]{6}$/);
+    expect(first[1]).toMatch(/^spark-5h-primary-[0-9a-f]{6}-2$/);
+    expect(first[2]).toMatch(/^spark-5h-primary-[0-9a-f]{6}$/);
     expect(new Set(first).size).toBe(first.length);
     expect(second).toEqual(first);
+
+    const reordered = {
+      additional_rate_limits: [usageWithDuplicates.additional_rate_limits[2], usageWithDuplicates.additional_rate_limits[0]],
+    };
+    const reorderedIds = parseCodexQuota(reordered, null, { name: 'x', authIndex: 'i' }, nowMs).windows.map((window) => window.id);
+    expect(reorderedIds).toEqual([first[2], first[0]]);
   });
 
   it('keeps usage reset-credit counts when detail lookup fails', () => {

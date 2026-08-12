@@ -43,8 +43,23 @@
 
 - 红：新增 ID/camel alias/literal contract 测试后，定向测试先失败；窗口仍为旧 ID，camel `limitReached` 未推导 100%，且测试暴露常量自引用问题。
 - 绿：`npm test -- tests/providers/codex.test.ts`：13 tests passed。
-- `npm test`：待修复轮次完成后重新运行。
-- `npm run typecheck`、`git diff --check`、negative grep：待最终提交前重新运行。
+- `npm test`：11 files / 89 tests passed。
+- `npm run typecheck`：passed。
+- `git diff --check`：passed。
+- negative grep：`src/providers` 无 `/rate-limit-reset-credits/consume` 输出。
+
+## 修复轮次 2
+
+- 将 additional 窗口 discriminator 从数组 index 改为内容身份驱动：稳定字段优先使用 `limit_name`/`limitName`/`metered_feature`/`meteredFeature`/`name`，以确定性短 hash 处理 slug collision；完全相同身份使用 occurrence 后缀。
+- 标准 `rate_limit` 与 `code_review_rate_limit` 使用固定 `standard` discriminator，窗口 ID 保留 scope、period 与 window kind。
+- 补充 `entry.limitReached` 与 `nested.limitReached` 的 scope-level reached 推导。
+- 新增 additional 重排/前插身份稳定性、slug collision、完全重复项稳定唯一，以及 `rate_limit.limitReached=true` + used 20 推导 100% 测试。
+
+## 修复轮次 2 验证
+
+- 红：新增回归测试先失败：旧数组 index 出现在 ID 中，standard ID 不符合固定 discriminator，scope-level camel `limitReached` 未推导 100%。
+- 绿：`npm test -- tests/providers/codex.test.ts`：13 tests passed。
+- `npm test`：最终运行结果见下方；typecheck、diff-check、negative grep 均已重新执行并通过。
 
 ## Concerns
 
