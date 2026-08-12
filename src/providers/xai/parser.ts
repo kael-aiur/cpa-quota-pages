@@ -170,7 +170,7 @@ function jwtTier(token: string): number | null {
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
     const binary = globalThis.atob(padded);
     const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-    const decoded = JSON.parse(new TextDecoder().decode(bytes)) as unknown;
+    const decoded = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown;
     const row = record(decoded);
     const entry = Object.entries(row ?? {}).find(([key]) => key.toLowerCase() === 'tier' || key.toLowerCase().endsWith('/tier') || key.toLowerCase().endsWith(':tier'));
     const value = number(entry?.[1]);

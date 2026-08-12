@@ -36,15 +36,22 @@ function statusError(result: ApiCallResult): CpaApiError {
   return new CpaApiError(extractApiError(result), { statusCode: result.statusCode, result });
 }
 function isAbortError(reason: unknown): boolean {
-  return reason instanceof DOMException && reason.name === 'AbortError'
-    || reason instanceof Error && reason.name === 'AbortError';
+  if ((typeof reason !== 'object' && typeof reason !== 'function') || reason === null) return false;
+  try { return (reason as { name?: unknown }).name === 'AbortError'; } catch { return false; }
+}
+
+function createAbortError(): Error {
+  if (typeof globalThis.DOMException === 'function') return new globalThis.DOMException('The operation was aborted', 'AbortError');
+  const error = new Error('The operation was aborted');
+  error.name = 'AbortError';
+  return error;
 }
 
 function abortReason(signal: AbortSignal | undefined, results: PromiseSettledResult<unknown>[] = []): unknown {
+  if (signal?.reason !== undefined) return signal.reason;
   const aborted = results.find((result) => result.status === 'rejected' && isAbortError(result.reason));
   if (aborted?.status === 'rejected') return aborted.reason;
-  if (signal?.reason !== undefined) return signal.reason;
-  return new DOMException('The operation was aborted', 'AbortError');
+  return createAbortError();
 }
 
 function emptyData(billing: XaiBillingSummary | null): XaiQuotaData {

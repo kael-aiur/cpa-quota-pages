@@ -30,6 +30,13 @@ function encodeJwt(payload: Record<string, unknown>): string {
   return `header.${encoded}.signature`;
 }
 
+function encodeJwtBytes(bytes: Uint8Array): string {
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  const encoded = btoa(binary).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+  return `header.${encoded}.signature`;
+}
+
 describe('xAI billing parser', () => {
   it('parses weekly usage and keeps its active quota reset', () => {
     const data = parseXaiBilling(weekly);
@@ -75,6 +82,14 @@ describe('xAI billing parser', () => {
     } finally {
       Object.defineProperty(globalThis, 'Buffer', { configurable: true, value: originalBuffer });
     }
+  });
+
+  it('rejects JWT tier when the payload contains malformed UTF-8', () => {
+    const malformed = new Uint8Array([
+      0x7b, 0x22, 0x6e, 0x6f, 0x69, 0x73, 0x65, 0x22, 0x3a, 0xc3, 0x28,
+      0x2c, 0x22, 0x74, 0x69, 0x65, 0x72, 0x22, 0x3a, 0x31, 0x7d,
+    ]);
+    expect(isPaidXaiCredential({ name: 'malformed.json', metadata: { access_token: encodeJwtBytes(malformed) } })).toBe(false);
   });
 
   it('recognizes using_api plus paid prefix, JWT tier, and not route hints', () => {
@@ -151,6 +166,20 @@ describe('xAI quota adapter', () => {
     await expect(queryXaiQuota(file, { apiCall })).rejects.toBe(abortError);
   });
 
+  it('prefers signal.reason identity over a settled AbortError', async () => {
+    const controller = new AbortController();
+    const customReason = { kind: 'caller-cancel' };
+    const settledAbort = new DOMException('settled', 'AbortError');
+    const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async (request) => {
+      if (request.url === XAI_BILLING_WEEKLY_URL) {
+        controller.abort(customReason);
+        throw new Error('weekly failed');
+      }
+      throw settledAbort;
+    });
+    await expect(queryXaiQuota(file, { apiCall, signal: controller.signal })).rejects.toBe(customReason);
+  });
+
   it('stops before paid fallback when billing completes after caller abort', async () => {
     const controller = new AbortController();
     const abortError = new DOMException('aborted', 'AbortError');
@@ -161,6 +190,17 @@ describe('xAI quota adapter', () => {
     });
     await expect(queryXaiQuota(file, { apiCall, signal: controller.signal })).rejects.toBe(abortError);
     expect(apiCall).toHaveBeenCalledTimes(2);
+  });
+
+  it('recognizes plain AbortError-shaped reasons without DOMException', async () => {
+    const originalDomException = globalThis.DOMException;
+    Object.defineProperty(globalThis, 'DOMException', { configurable: true, value: undefined });
+    try {
+      const apiCall = vi.fn<ProviderQueryContext['apiCall']>(async () => { throw { name: 'AbortError' }; });
+      await expect(queryXaiQuota(file, { apiCall })).rejects.toMatchObject({ name: 'AbortError' });
+    } finally {
+      Object.defineProperty(globalThis, 'DOMException', { configurable: true, value: originalDomException });
+    }
   });
 
   it('does not swallow caller aborts during paid health probes', async () => {
