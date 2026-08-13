@@ -49,6 +49,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
   let batchToken = 0;
   let batchInFlight = false;
   let destroyed = false;
+  const batchOwner = Symbol('quota-actions-batch');
 
   const accountById = (id: string): AccountEntry | undefined =>
     options.store.getState().accounts.find((account) => account.id === id);
@@ -111,10 +112,10 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
   const queryCurrentPage = async (accountIds: string[]): Promise<void> => {
     if (accountIds.length > MAX_BATCH_SIZE) throw new RangeError(`最多查询 ${MAX_BATCH_SIZE} 个账号`);
     if (destroyed || lifecycle.signal.aborted || batchInFlight) return;
+    if (!options.store.beginBatch(batchOwner)) return;
     batchInFlight = true;
     const token = ++batchToken;
     const generation = options.store.getState().generation;
-    options.store.setBatchLoading(true);
     try {
       const accounts = accountIds.map(accountById).filter((account): account is AccountEntry => account !== undefined);
       const groups = new Map<Provider, AccountEntry[]>();
@@ -123,7 +124,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
         if (group) group.push(account);
         else groups.set(account.provider, [account]);
       }
-      await Promise.all(Array.from(groups.values()).map(async (group) => {
+      const groupResults = await Promise.allSettled(Array.from(groups.values()).map(async (group) => {
         const operations = new Map<string, number>();
         const groupAccounts = group.filter((account) => {
           const key = loadingKey(generation, account.id);
@@ -146,18 +147,24 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
           if (token === batchToken && !destroyed && !lifecycle.signal.aborted) {
             try {
               options.store.setQuotaBatch(generation, updates);
-            } catch (error) {
-              options.store.setQuotaErrors(generation, groupAccounts.map(({ id }) => id), errorInfo(error));
+            } catch (commitError) {
+              try {
+                options.store.setQuotaErrors(generation, groupAccounts.map(({ id }) => id), errorInfo(commitError));
+              } catch (fallbackError) {
+                throw new AggregateError([commitError, fallbackError], 'Failed to commit quota group error state');
+              }
             }
           }
         } finally {
           for (const [key, operation] of operations) if (loading.get(key) === operation) loading.delete(key);
         }
       }));
+      const groupFailure = groupResults.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (groupFailure) throw groupFailure.reason;
       if (lifecycle.signal.aborted) throw abortError(lifecycle.signal);
     } finally {
       batchInFlight = false;
-      if (token === batchToken) options.store.setBatchLoading(false);
+      if (token === batchToken) options.store.endBatch(batchOwner);
     }
   };
 
@@ -167,7 +174,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
     batchToken += 1;
     lifecycle.destroy();
     loading.clear();
-    options.store.setBatchLoading(false);
+    options.store.endBatch(batchOwner);
   };
 
   return { reloadAccounts, queryOne, queryCurrentPage, destroy };

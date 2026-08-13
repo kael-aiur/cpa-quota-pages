@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AccountEntry } from '../../src/quota/types';
 import { createQuotaStore, type QuotaLoadState } from '../../src/app/state';
 
@@ -121,15 +121,39 @@ describe('quota store', () => {
     expect(store.getState().quotaCache.has('a')).toBe(false);
   });
 
-  it('bounds malicious reentrant listeners and remains usable', () => {
+  it('continues capped reentrant publishing in a microtask and remains usable', async () => {
     const store = createQuotaStore();
+    const seen: number[] = [];
     let calls = 0;
     store.subscribe(() => {
       calls += 1;
-      store.beginAccountGeneration();
+      if (calls < 105) store.beginAccountGeneration();
     });
+    store.subscribe((state) => seen.push(state.generation));
+
     expect(() => store.beginAccountGeneration()).not.toThrow();
-    expect(calls).toBeLessThanOrEqual(100);
-    expect(store.beginAccountGeneration()).toBeGreaterThan(100);
+    expect(calls).toBe(100);
+    expect(seen).toHaveLength(0);
+
+    await vi.waitFor(() => expect(seen.at(-1)).toBe(105));
+    expect(store.beginAccountGeneration()).toBe(106);
+  });
+
+  it('allows only the current batch owner to clear batch loading', () => {
+    const store = createQuotaStore();
+    const firstOwner = Symbol('first');
+    const secondOwner = Symbol('second');
+
+    expect(store.beginBatch(firstOwner)).toBe(true);
+    expect(store.beginBatch(secondOwner)).toBe(false);
+    expect(store.endBatch(secondOwner)).toBe(false);
+    expect(store.getState().batchLoading).toBe(true);
+    expect(store.endBatch(firstOwner)).toBe(true);
+    expect(store.getState().batchLoading).toBe(false);
+
+    expect(store.beginBatch(secondOwner)).toBe(true);
+    expect(store.endBatch(firstOwner)).toBe(false);
+    expect(store.getState().batchLoading).toBe(true);
+    expect(store.endBatch(secondOwner)).toBe(true);
   });
 });

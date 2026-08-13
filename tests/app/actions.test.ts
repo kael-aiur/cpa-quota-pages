@@ -193,6 +193,118 @@ describe('quota actions', () => {
     expect(store.getState().batchLoading).toBe(false);
   });
 
+  it('does not let another actions instance clear the shared batch owner', async () => {
+    const store = createQuotaStore();
+    const a = account('a', 'claude');
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, [a]);
+    const first = createQuotaActions({ api: api([a], []), store });
+    const second = createQuotaActions({
+      api: api([a], []),
+      store,
+      providerQueries: { claude: async (_file, context) => new Promise((_resolve, reject) => context.signal?.addEventListener('abort', () => reject(context.signal?.reason), { once: true })) },
+    });
+
+    const batch = second.queryCurrentPage(['a']);
+    await vi.waitFor(() => expect(store.getState().batchLoading).toBe(true));
+    first.destroy();
+    expect(store.getState().batchLoading).toBe(true);
+    second.destroy();
+    expect(store.getState().batchLoading).toBe(false);
+    await expect(batch).rejects.toThrow();
+  });
+
+  it('does not let an old batch finally clear a newer shared-store owner', async () => {
+    const store = createQuotaStore();
+    const accounts = [account('old', 'claude'), account('new', 'kimi')];
+    const generation = store.beginAccountGeneration();
+    store.replaceAccounts(generation, accounts);
+    let releaseOld!: () => void;
+    const oldActions = createQuotaActions({
+      api: api(accounts, []),
+      store,
+      providerQueries: { claude: async () => new Promise((resolve) => { releaseOld = () => resolve({ windows: [] } as never); }) },
+    });
+    const newActions = createQuotaActions({
+      api: api(accounts, []),
+      store,
+      providerQueries: { kimi: async (_file, context) => new Promise((_resolve, reject) => context.signal?.addEventListener('abort', () => reject(context.signal?.reason), { once: true })) },
+    });
+
+    const oldBatch = oldActions.queryCurrentPage(['old']);
+    const oldSettled = oldBatch.catch((error: unknown) => error);
+    await vi.waitFor(() => expect(store.getState().batchLoading).toBe(true));
+    oldActions.destroy();
+    expect(store.getState().batchLoading).toBe(false);
+
+    const newBatch = newActions.queryCurrentPage(['new']);
+    await vi.waitFor(() => expect(store.getState().batchLoading).toBe(true));
+    releaseOld();
+    await oldSettled;
+    expect(store.getState().batchLoading).toBe(true);
+
+    newActions.destroy();
+    await expect(newBatch).rejects.toThrow();
+    expect(store.getState().batchLoading).toBe(false);
+  });
+
+  it('waits for all groups and releases guards when commit and fallback both throw', async () => {
+    const baseStore = createQuotaStore();
+    const accounts = [account('bad', 'claude'), account('good', 'kimi')];
+    const generation = baseStore.beginAccountGeneration();
+    baseStore.replaceAccounts(generation, accounts);
+    const commitError = new Error('batch commit failed');
+    const fallbackError = new Error('fallback commit failed');
+    const store = {
+      ...baseStore,
+      setQuotaBatch(currentGeneration: number, updates: ReadonlyMap<string, import('../../src/app/state').QuotaLoadState>) {
+        if (updates.has('bad')) throw commitError;
+        return baseStore.setQuotaBatch(currentGeneration, updates);
+      },
+      setQuotaErrors(currentGeneration: number, accountIds: readonly string[], error: import('../../src/app/state').QuotaErrorInfo) {
+        if (accountIds.includes('bad')) throw fallbackError;
+        return baseStore.setQuotaErrors(currentGeneration, accountIds, error);
+      },
+    };
+    let releaseGood!: () => void;
+    let goodCalls = 0;
+    const actions = createQuotaActions({
+      api: api(accounts, []),
+      store,
+      providerQueries: {
+        claude: async () => ({ windows: [] }) as never,
+        kimi: async () => {
+          goodCalls += 1;
+          if (goodCalls === 1) await new Promise<void>((resolve) => { releaseGood = resolve; });
+          return { windows: [] } as never;
+        },
+      },
+    });
+
+    let settled = false;
+    const batch = actions.queryCurrentPage(['bad', 'good']);
+    const observed = batch.then(
+      () => ({ status: 'fulfilled' as const }),
+      (error: unknown) => ({ status: 'rejected' as const, error }),
+    ).finally(() => { settled = true; });
+    await vi.waitFor(() => expect(releaseGood).toBeTypeOf('function'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+    expect(store.getState().batchLoading).toBe(true);
+
+    releaseGood();
+    const outcome = await observed;
+    expect(outcome.status).toBe('rejected');
+    if (outcome.status !== 'rejected') throw new Error('expected rejection');
+    expect(outcome.error).toBeInstanceOf(AggregateError);
+    expect((outcome.error as AggregateError).errors).toEqual([commitError, fallbackError]);
+    expect(store.getState().quotaCache.get('good')?.status).toBe('success');
+    expect(store.getState().batchLoading).toBe(false);
+
+    await expect(actions.queryCurrentPage(['good'])).resolves.toBeUndefined();
+    expect(store.getState().batchLoading).toBe(false);
+  });
+
   it('does not publish failed reload cleanup after destroy', async () => {
     const store = createQuotaStore();
     const a = account('a', 'claude');

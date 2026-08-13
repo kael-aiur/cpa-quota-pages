@@ -51,7 +51,8 @@ export interface QuotaStore {
   setQuota(accountId: string, generation: number, quota: QuotaLoadState): boolean;
   setQuotaBatch(generation: number, updates: ReadonlyMap<string, QuotaLoadState>): boolean;
   setQuotaErrors(generation: number, accountIds: readonly string[], error: QuotaErrorInfo): boolean;
-  setBatchLoading(loading: boolean): void;
+  beginBatch(ownerToken: symbol): boolean;
+  endBatch(ownerToken: symbol): boolean;
   invalidateAuth(): void;
   destroy(): void;
 }
@@ -167,6 +168,8 @@ export function createQuotaStore(): QuotaStore {
   let destroyed = false;
   let publishing = false;
   let pendingPublish = false;
+  let publishScheduled = false;
+  let batchOwner: symbol | undefined;
 
   const publish = (): void => {
     if (destroyed) return;
@@ -193,6 +196,14 @@ export function createQuotaStore(): QuotaStore {
       } while (pendingPublish && !destroyed && passes < MAX_PUBLISH_PASSES);
     } finally {
       publishing = false;
+    }
+    if (pendingPublish && !destroyed && !publishScheduled) {
+      publishScheduled = true;
+      queueMicrotask(() => {
+        publishScheduled = false;
+        if (destroyed || !pendingPublish) return;
+        publish();
+      });
     }
   };
 
@@ -256,13 +267,27 @@ export function createQuotaStore(): QuotaStore {
       publish();
       return true;
     },
-    setBatchLoading(loading) {
-      if (destroyed || state.batchLoading === loading) return;
-      state = { ...state, batchLoading: loading };
-      publish();
+    beginBatch(ownerToken) {
+      if (destroyed || batchOwner !== undefined) return false;
+      batchOwner = ownerToken;
+      if (!state.batchLoading) {
+        state = { ...state, batchLoading: true };
+        publish();
+      }
+      return true;
+    },
+    endBatch(ownerToken) {
+      if (destroyed || batchOwner !== ownerToken) return false;
+      batchOwner = undefined;
+      if (state.batchLoading) {
+        state = { ...state, batchLoading: false };
+        publish();
+      }
+      return true;
     },
     invalidateAuth() {
       if (destroyed) return;
+      batchOwner = undefined;
       state = { ...state, auth: { status: 'invalid' }, accounts: [], quotaCache: new Map(), generation: state.generation + 1, batchLoading: false };
       fingerprints.clear();
       publish();
@@ -270,6 +295,8 @@ export function createQuotaStore(): QuotaStore {
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      batchOwner = undefined;
+      pendingPublish = false;
       listeners.clear();
       state = { ...state, accounts: [], quotaCache: new Map(), batchLoading: false };
       currentSnapshot = snapshot(state);
