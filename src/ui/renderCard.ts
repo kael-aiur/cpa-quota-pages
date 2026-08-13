@@ -50,6 +50,7 @@ function buildAdminMeta(entry: AccountEntry): HTMLElement | null {
     metaRow('账号', textOf(file.email) || textOf(file.account)),
     metaRow('文件', textOf(file.name)),
     metaRow('index', textOf(file.authIndex ?? file.auth_index)),
+    metaRow('状态', textOf(file.status)),
     metaRow('项目', textOf(file.projectId ?? file.project_id)),
     metaRow('ID', textOf(file.id)),
   ].filter((row): row is HTMLElement => row !== null);

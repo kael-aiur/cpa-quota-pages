@@ -172,3 +172,45 @@ describe('renderQuotaCard identity masking', () => {
     expect(card.querySelector('[data-action="reset"]')).toBeNull();
   });
 });
+
+describe('renderQuotaCard admin meta status row', () => {
+  it('reveals the auth-file status in admin mode when file.status is set', async () => {
+    const label = await buildAnonymousAccountLabel('codex', 'secret-file.json');
+    const entry: AccountEntry = {
+      ...secretEntry(),
+      file: { ...secretEntry().file, status: 'active' },
+    };
+    const card = renderQuotaCard(entry, idle, adminOptions(label), handlers());
+
+    const meta = card.querySelector('.cardMeta');
+    expect(meta).not.toBeNull();
+    expect(meta?.textContent ?? '').toContain('active');
+    // The status row should carry its own label/value pair, not just appear in the header.
+    const rows = meta?.querySelectorAll('.cardMetaRow') ?? [];
+    const statusRow = Array.from(rows).find((row) => (row.textContent ?? '').includes('active'));
+    expect(statusRow, 'expected a dedicated status meta row').toBeDefined();
+  });
+
+  it('omits the status row when file.status is missing', async () => {
+    const label = await buildAnonymousAccountLabel('codex', 'secret-file.json');
+    const entry: AccountEntry = { ...secretEntry(), file: { ...secretEntry().file } };
+    delete entry.file.status;
+    const card = renderQuotaCard(entry, idle, adminOptions(label), handlers());
+
+    const rows = card.querySelectorAll('.cardMetaRow');
+    const statusRow = Array.from(rows).find((row) => (row.textContent ?? '').toLowerCase().includes('状态'));
+    expect(statusRow, 'no status row should render when status is absent').toBeUndefined();
+  });
+
+  it('does not leak the status row into user mode', async () => {
+    const label = await buildAnonymousAccountLabel('codex', 'secret-file.json');
+    const entry: AccountEntry = {
+      ...secretEntry(),
+      file: { ...secretEntry().file, status: 'active' },
+    };
+    const card = renderQuotaCard(entry, idle, userOptions(label), handlers());
+
+    expect(card.querySelector('.cardMeta')).toBeNull();
+    expect(card.textContent ?? '').not.toContain('active');
+  });
+});
