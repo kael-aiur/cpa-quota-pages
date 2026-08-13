@@ -389,3 +389,37 @@ describe('renderTimeline tooltip layer', () => {
     expect((window as unknown as { __pwnedTimeline?: number }).__pwnedTimeline).toBeUndefined();
   });
 });
+
+describe('renderTimeline provider identity as text (a11y)', () => {
+  it('exposes the provider name as visually-hidden text beside the dot, so identity is never color-alone', () => {
+    // The account label intentionally carries NO provider name — the colored
+    // dot must not be the only carrier of provider identity (dataviz rule:
+    // identity is never color-alone; CVD/sighted-light readers cannot read
+    // sub-3:1 dots). A visually-hidden provider name supplies the text channel.
+    const root = renderTimeline(
+      model({
+        lanes: [
+          projectedLane({
+            lane: lane({ provider: 'codex', name: 'codex-b', displayName: 'Codex B' }),
+            label: 'DEF456',
+            windows: [win({ state: 'live', remaining: 60 })],
+          }),
+        ],
+      }),
+      handlers(),
+    );
+    const labelRow = root!.querySelector('.timelineLaneLabel');
+    expect(labelRow).not.toBeNull();
+    // The visible lane name still carries the account label.
+    expect(labelRow!.querySelector('.timelineLaneName')?.textContent ?? '').toContain('DEF456');
+    // A visually-hidden provider-name element carries provider identity as text.
+    const providerName = labelRow!.querySelector('.timelineProviderName');
+    expect(providerName, 'expected a visually-hidden provider-name element').not.toBeNull();
+    expect(providerName!.classList.contains('timelineSrOnly')).toBe(true);
+    expect(providerName!.textContent ?? '').toContain('Codex');
+    // The full row text includes both account and provider identity.
+    const rowText = labelRow!.textContent ?? '';
+    expect(rowText).toContain('DEF456');
+    expect(rowText).toContain('Codex');
+  });
+});

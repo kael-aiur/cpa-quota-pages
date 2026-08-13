@@ -184,8 +184,14 @@ function buildLabelColumn(lanes: ReadonlyArray<TimelineProjectedLane>): HTMLElem
   const col = h('div', { class: 'timelineLabelColumn' });
   for (const pl of lanes) {
     const row = h('div', { class: 'timelineLaneLabel' });
+    // Provider identity is NEVER carried by color alone (dataviz rule). The
+    // colored dot is sub-3:1 for several light-theme slots, so the provider
+    // name is also emitted as visually-hidden text — the relief channel for
+    // screen-reader and CVD / low-contrast readers. It precedes the account
+    // label in DOM so it reads "[provider] [account]".
     row.append(
       h('span', { class: 'timelineProviderDot', data: { provider: pl.lane.provider }, aria: { hidden: 'true' } }),
+      h('span', { class: 'timelineProviderName timelineSrOnly', text: PROVIDER_LABEL[pl.lane.provider] }),
       h('span', { class: 'timelineLaneName', text: pl.label }),
     );
     col.append(row);
