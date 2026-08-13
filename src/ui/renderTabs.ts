@@ -21,6 +21,8 @@ export interface TabsOptions {
   providers?: Provider[];
   selected: Provider | 'all';
   sortMode?: SortMode;
+  /** Optional account counts appended to each tab label (e.g. "Claude · 3"). */
+  counts?: Partial<Record<Provider | 'all', number>>;
   handlers: TabsHandlers;
 }
 
@@ -31,6 +33,7 @@ function tabButton(
   label: string,
   active: boolean,
   onSelect: () => void,
+  count?: number,
 ): HTMLButtonElement {
   const btn = h('button', {
     class: `tab${active ? ' is-active' : ''}`,
@@ -43,6 +46,7 @@ function tabButton(
     },
   });
   btn.append(h('span', { class: 'tabLabel', text: label }));
+  if (count !== undefined) btn.append(h('span', { class: 'tabCount', text: String(count) }));
   btn.addEventListener('click', onSelect);
   return btn;
 }
@@ -51,15 +55,17 @@ export function renderTabs(options: TabsOptions): HTMLElement {
   const available = options.providers ?? PROVIDER_ORDER;
   const present = PROVIDER_ORDER.filter((provider) => available.includes(provider));
   const selected = options.selected;
+  const counts = options.counts;
 
   const tabBar = h('div', { class: 'tabBar', attrs: { role: 'tablist', 'aria-label': '按 Provider 筛选' } });
-  tabBar.append(tabButton('all', '全部', selected === 'all', () => options.handlers.onSelectProvider('all')));
+  tabBar.append(tabButton('all', '全部', selected === 'all', () => options.handlers.onSelectProvider('all'), counts?.all));
   for (const provider of present) {
     tabBar.append(tabButton(
       provider,
       PROVIDER_LABELS[provider],
       selected === provider,
       () => options.handlers.onSelectProvider(provider),
+      counts?.[provider],
     ));
   }
 
@@ -78,6 +84,7 @@ export function renderTabs(options: TabsOptions): HTMLElement {
         class: `sortTab${active ? ' is-active' : ''}`,
         attrs: {
           type: 'button',
+          'data-sort': mode.id,
           'aria-pressed': active ? 'true' : 'false',
         },
       });

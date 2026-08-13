@@ -41,7 +41,7 @@ export function renderHeader(options: HeaderOptions): HTMLElement {
 
   const refresh = h('button', {
     class: 'btn',
-    attrs: { type: 'button', title: '重新拉取账号列表' },
+    attrs: { type: 'button', title: '重新拉取账号列表', 'data-action': 'refresh-accounts' },
   });
   refresh.append(refreshIcon());
   refresh.append(h('span', { class: 'btnLabel', text: '刷新账号' }));
@@ -50,7 +50,7 @@ export function renderHeader(options: HeaderOptions): HTMLElement {
 
   const queryAll = h('button', {
     class: 'btn btn-primary',
-    attrs: { type: 'button', title: '查询全部账号额度' },
+    attrs: { type: 'button', title: '查询全部账号额度', 'data-action': 'query-all' },
   });
   queryAll.append(refreshIcon());
   queryAll.append(h('span', { class: 'btnLabel', text: '查询全部额度' }));
@@ -60,7 +60,7 @@ export function renderHeader(options: HeaderOptions): HTMLElement {
   if (options.handlers.onToggleTheme) {
     const toggle = h('button', {
       class: 'btn themeToggle',
-      attrs: { type: 'button', title: '切换主题', 'aria-label': '切换主题' },
+      attrs: { type: 'button', title: '切换主题', 'aria-label': '切换主题', 'data-action': 'toggle-theme' },
     });
     toggle.append(sunIcon());
     toggle.append(moonIcon());
