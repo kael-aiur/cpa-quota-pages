@@ -229,3 +229,60 @@ Verification (all AFTER both fixes):
   matches a clean rebuild of the current sources"). Sources unchanged, so no
   dist rebuild/commit was needed (the only dist bytes a rebuild touches are
   the self-referential revision stamp, restored to committed state).
+
+### Fix round 1 verification audit (independent re-run, 2026-08-15)
+
+The fix commit (81f0466) was re-verified from scratch rather than trusted;
+code and wiring were re-read and every verification claim re-run.
+
+Re-investigation findings (all confirmed against HEAD):
+- `src/app/createQuotaApp.ts` `handleQueryAll` loops page-sized chunks
+  sequentially; every store publish synchronously re-renders via
+  `store.subscribe(() => render())`. `src/ui/renderApp.ts` `derivePage` →
+  `paginate` renders ONLY the current page slice, so `pageSize: 5` really does
+  cut per-publish DOM work ~5x versus 25 cards.
+- The >20 hard cap is independently asserted in `tests/app/actions.test.ts:77`
+  (`rejects.toThrow(/20/)`), so shrinking this fixture loses no coverage.
+- No functional race exists: the store coalesces re-entrant publishes
+  (`MAX_PUBLISH_PASSES` + microtask deferral in `src/app/state.ts`), the
+  mock `apiCall` resolves immediately, afterEach clears sessionStorage/roots,
+  and `tests/setup.ts` restores URL and real timers per test.
+- The sibling-worker load source is real: `tests/build/projectConfig.test.ts`
+  spawns actual `npm run build` / `build:user` / `build:admin` (vite) runs —
+  several full builds in parallel workers while the app test churns full-DOM
+  rebuilds.
+
+Comparative reproduction under deliberate starvation (8 `yes` CPU burners,
+load average 35):
+- PRE-fix test (temporarily restored from feedf67): full suite →
+  `FAIL tests/app/createQuotaApp.test.ts > queries every visible account in
+  batches of at most the page size (max 20)` — `Error: Test timed out in
+  20000ms` at tests/app/createQuotaApp.test.ts:259. Failure mode confirmed:
+  wall-clock timeout, NOT an assertion mismatch or unhandled rejection.
+- Fixed test (HEAD, same 8 burners, same command): 30/30 files, 290/290 tests
+  green.
+- Both trees also ran 3x full suites without burners: pre-fix happened to stay
+  green (machine idle — the flake is load-dependent, which is why it was
+  intermittent), fixed green 3/3.
+
+Note: the same `projectConfig`/`cspHashPlugin` build-running tests re-stamp
+dist's `cpa-quota-source-revision` from HEAD during suite runs, so `dist`
+shows a 2-line (stamp-only) diff after any full suite. Verified the delta is
+exactly the 4 self-referential revision-stamp lines and nothing else; restored
+via `git checkout -- dist`. `npm run check:dist` exits 0 ("committed dist
+matches a clean rebuild of the current sources"), so committed dist is correct
+and needs no rebuild/commit.
+
+Final verification on the clean tree (commit 81f0466, no code changes needed
+this session — the committed fix is correct):
+- Single test in isolation: 5/5 green.
+- Full suite (`npx vitest run`): 3/3 consecutive runs green — 30/30 files,
+  290/290 tests each.
+- `npm run typecheck` clean; `npm run check:dist` exit 0; working tree clean.
+
+Root cause (confirmed): load-bound wall-clock blowup — 25 accounts × full-page
+DOM rebuild on every store publish under parallel jsdom workers that are
+simultaneously running real vite builds, starving the event loop past the 20s
+test timeout. Fix: reduced fixture (12 accounts, `pageSize: 5` — still three
+serialized batches, >2, proving chunking) + explicit 30s timeout (Task 9
+precedent).
