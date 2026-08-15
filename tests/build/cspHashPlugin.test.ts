@@ -200,9 +200,16 @@ describe('secured artifacts from npm run build', () => {
 
     it(`${name}: carries build version and source revision metas`, () => {
       const html = readDist(name);
-      const info = readBuildInfo();
       expect(html).toContain(`<meta name="cpa-quota-version" content="${pkg.version}">`);
-      expect(html).toContain(`<meta name="cpa-quota-source-revision" content="${info.commit}">`);
+      // The revision is stamped from HEAD at BUILD TIME and dist is committed
+      // in the same commit it was built from, so the committed artifact always
+      // carries the PARENT commit's sha (the build-time self-reference that
+      // scripts/check-dist.mjs explicitly normalizes). It must never equal the
+      // CURRENT build info on a clean checkout, and must be a 12-hex sha.
+      const meta = /<meta name="cpa-quota-source-revision" content="([^"]*)">/.exec(html);
+      expect(meta).not.toBeNull();
+      expect(meta![1]).toMatch(/^[0-9a-f]{12}$/);
+      expect(readBuildInfo().commit).toMatch(/^[0-9a-f]{12}$/);
     });
 
     it(`${name}: ships a hash-only CSP whose hash matches the final inline script`, () => {

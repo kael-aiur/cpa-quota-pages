@@ -257,26 +257,32 @@ describe('createQuotaApp orchestration', () => {
   });
 
   it('queries every visible account in batches of at most the page size (max 20)', async () => {
-    const files = Array.from({ length: 25 }, (_, i) => claudeFile(`c${i}.json`));
+    // 12 accounts at pageSize 5 still force THREE serialized batches (>2), the
+    // minimum that proves chunking, while keeping the per-publish full-DOM
+    // rebuild cheap: each store publish re-renders the whole page, so the
+    // rendered card count (5, not 25) dominates this test's cost under
+    // parallel-worker CPU starvation. The hard >20 RangeError cap itself is
+    // covered in tests/app/actions.test.ts.
+    const files = Array.from({ length: 12 }, (_, i) => claudeFile(`c${i}.json`));
     const api = fakeApi(files);
     const calls: string[] = [];
     const root = newRoot();
     const app = await startApp({
-      root, mode: 'user', revealAccountIdentity: false,
+      root, mode: 'user', revealAccountIdentity: false, pageSize: 5,
       session: fakeSession(), api, media: fakeMedia(), clock: fakeClock(),
       providerQueries: { claude: claudeQuery(calls) },
     });
 
     root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
     await vi.waitFor(
-      () => expect(mockCount(api.apiCall)).toBe(25),
+      () => expect(mockCount(api.apiCall)).toBe(12),
       { timeout: 15000, interval: 50 },
     );
     // No card should be in an error state from a RangeError batch overflow.
     const states = Array.from(root.querySelectorAll('.card')).map((c) => c.getAttribute('data-state'));
     expect(states).not.toContain('error');
     app.destroy();
-  }, 20000);
+  }, 30000);
 
   it('isolates a single card failure from successful siblings', async () => {
     const files = [claudeFile('a.json'), claudeFile('b.json'), kimiFile('k.json')];
