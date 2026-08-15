@@ -26,8 +26,10 @@
  *
  * Reset capability isolation: the user entry passes NO reset capability; the
  * admin entry is the only caller that imports `consumeCodexResetCredit` and
- * injects it here with `revealAccountIdentity: true`. The consume endpoint
- * string never appears in this module.
+ * injects it here with `revealAccountIdentity: true`, together with the admin
+ * reset flow (`onResetRequest`, from `src/admin/resetFlow`) that owns the
+ * confirm dialog + consume call. Neither the consume endpoint string nor the
+ * dialog copy appears in this module, so none of it can reach the user bundle.
  */
 
 import { createCpaApi } from '../api/apiCall';
@@ -44,8 +46,7 @@ import { createQuotaActions } from './actions';
 import type { QuotaActions } from './actions';
 import { createQuotaStore } from './state';
 import type { QuotaErrorInfo, QuotaLoadState, QuotaStore } from './state';
-import type { CodexResetCapability, QuotaAppController, QuotaAppOptions } from './types';
-import { openConfirmDialog } from '../ui/confirmDialog';
+import type { QuotaAppController, QuotaAppOptions, QuotaResetBridge } from './types';
 import {
   deriveVisibleAccounts,
   initialUiState,
@@ -74,7 +75,6 @@ function stableIdentifier(entry: AccountEntry): string {
 
 export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
   const { root, mode, revealAccountIdentity } = options;
-  const consumeCodexResetCredit: CodexResetCapability | undefined = options.consumeCodexResetCredit;
   const doc = options.document ?? (typeof document !== 'undefined' ? document : undefined);
   const pageSize = options.pageSize ?? 20;
   const timeoutMs = options.timeoutMs;
@@ -154,38 +154,30 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
   };
 
   const handleReset = (accountId: string): void => {
-    if (!consumeCodexResetCredit || !api || destroyed) return;
+    if (!options.onResetRequest || destroyed || !api) return;
     const account = store.getState().accounts.find((candidate) => candidate.id === accountId);
     if (!account) return;
-    const trigger = doc && doc.activeElement instanceof HTMLElement ? doc.activeElement : root;
     const context: ProviderQueryContext = {
       apiCall: api.apiCall,
       downloadAuthFile: api.downloadAuthFile,
       signal: destroyController.signal,
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
     };
-    const dialog = openConfirmDialog({
-      title: '重置 Codex 额度',
-      message: '将消耗一次额度重置券以重置该账号额度，确认继续？',
-      confirmText: '确认重置',
-      cancelText: '取消',
-      trigger,
-      onConfirm: async () => {
-        try {
-          const data = await consumeCodexResetCredit(account.file, context);
-          if (!destroyed) store.setQuota(accountId, store.getState().generation, { status: 'success', data });
-        } catch (error) {
-          if (!destroyed) {
-            store.setQuota(accountId, store.getState().generation, { status: 'error', error: toErrorInfo(error) } as QuotaLoadState);
-          }
-          throw error;
-        }
+    const bridge: QuotaResetBridge = {
+      account,
+      context,
+      publish: (result) => {
+        if (destroyed) return;
+        store.setQuota(
+          accountId,
+          store.getState().generation,
+          (result.status === 'success'
+            ? { status: 'success', data: result.data }
+            : { status: 'error', error: toErrorInfo(result.error) }) as QuotaLoadState,
+        );
       },
-    });
-    // Handoff constraint (Task 14): DialogController.closed rejects when
-    // onConfirm fails. Attach a handler so the rejection is never unhandled;
-    // the failure is already surfaced per-card via the store above.
-    dialog.closed.catch(() => { /* reset failure already recorded on the card */ });
+    };
+    options.onResetRequest(bridge);
   };
 
   const viewHandlers: QuotaViewHandlers = {
@@ -202,7 +194,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     },
     onQueryAll: () => { void handleQueryAll(); },
     onQueryOne: (accountId) => { if (actions && !destroyed) void actions.queryOne(accountId); },
-    ...(mode === 'admin' && consumeCodexResetCredit ? { onReset: (accountId: string) => handleReset(accountId) } : {}),
+    ...(mode === 'admin' && options.onResetRequest ? { onReset: (accountId: string) => handleReset(accountId) } : {}),
     onSelectProvider: (selection) => {
       uiState.selectedProvider = selection;
       uiState.currentPage = 1;
@@ -246,7 +238,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     root,
     mode,
     revealAccountIdentity,
-    canConsumeCodexReset: mode === 'admin' && Boolean(consumeCodexResetCredit),
+    canConsumeCodexReset: mode === 'admin' && Boolean(options.onResetRequest),
     pageSize,
     now: () => clock.getSnapshot(),
     clock,

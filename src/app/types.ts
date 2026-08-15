@@ -16,10 +16,26 @@ import type { ProviderQueryContext } from '../providers/types';
 import type { Provider, ProviderQuery } from '../providers/types';
 import type { CodexQuotaData } from '../providers/codex/parser';
 import type { QuotaStore, AppState } from './state';
+import type { AccountEntry } from '../quota/types';
 import type { MinuteClock } from '../quota/minuteClock';
 
 /** Admin-only Codex reset-credit consume capability (admin entry injects the concrete impl). */
 export type CodexResetCapability = (file: AuthFile, context: ProviderQueryContext) => Promise<CodexQuotaData>;
+
+/**
+ * Everything the admin-only reset flow needs from a running app instance.
+ * Built by the app root when a reset is requested and handed to the
+ * admin-supplied `onResetRequest` handler, which owns the confirm dialog,
+ * the consume call, and result publishing.
+ */
+export interface QuotaResetBridge {
+  /** The account entry the reset applies to. */
+  account: AccountEntry;
+  /** Query context (api primitives + abort signal + timeout) for the consume call. */
+  context: ProviderQueryContext;
+  /** Publish the consume outcome onto the account's card. */
+  publish(result: { status: 'success'; data: CodexQuotaData } | { status: 'error'; error: unknown }): void;
+}
 
 /**
  * Options for {@link createQuotaApp}. The first four fields are the public
@@ -32,7 +48,16 @@ export interface QuotaAppOptions {
   root: HTMLElement;
   mode: 'user' | 'admin';
   revealAccountIdentity: boolean;
-  consumeCodexResetCredit?: CodexResetCapability;
+  /**
+   * Admin-only reset flow handler. When the reset button is clicked the app
+   * root resolves a {@link QuotaResetBridge} and hands it to this handler,
+   * which owns the confirm dialog and the consume call (closing over the
+   * concrete `consumeCodexResetCredit` capability). Provided by the admin
+   * entry (`src/admin/resetFlow`); its absence disables the reset UI. The
+   * shared app root never touches the capability itself, so no admin
+   * write-path symbol can reach the user-facing bundle.
+   */
+  onResetRequest?: (bridge: QuotaResetBridge) => void;
 
   /** Override the page URL used for bootstrap (defaults to the current location). */
   url?: URL;

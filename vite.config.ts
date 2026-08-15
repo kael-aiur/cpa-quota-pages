@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
+import { readBuildInfo } from './build/buildInfo';
+import { cspHashPlugin } from './build/cspHashPlugin';
 
 export type BuildMode = 'user' | 'admin';
 
@@ -12,10 +14,17 @@ export function resolveBuildTarget(mode: string) {
 
 export default defineConfig(({ mode }) => {
   const target = resolveBuildTarget(mode);
+  const buildInfo = readBuildInfo();
   const root = resolve(process.cwd(), 'templates');
   return {
     root,
-    plugins: [viteSingleFile()],
+    // cspHashPlugin MUST run after viteSingleFile so it hashes the fully
+    // inlined final script; for post plugins, this array order is the
+    // generateBundle execution order.
+    plugins: [
+      viteSingleFile(),
+      cspHashPlugin({ target: target.fileName === 'quota-admin.html' ? 'admin' : 'user', buildInfo }),
+    ],
     build: {
       outDir: resolve(process.cwd(), 'dist'),
       emptyOutDir: false,
