@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { AuthenticatedSession } from '../../src/auth/types';
@@ -102,6 +102,7 @@ afterEach(() => {
   for (const root of roots) root.remove();
   roots.length = 0;
   document.body.innerHTML = '';
+  sessionStorage.clear(); // UI preference persistence must not leak across tests
 });
 
 function newRoot(): HTMLElement {
@@ -401,6 +402,107 @@ describe('createQuotaApp orchestration', () => {
     } finally {
       process.off('unhandledRejection', handler);
     }
+  });
+});
+
+describe('createQuotaApp UI preference persistence', () => {
+  const key = 'cpaQuota.uiState';
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('honors a pre-seeded provider and sort mode on start', async () => {
+    sessionStorage.setItem(key, JSON.stringify({ provider: 'kimi', sortMode: 'soonest' }));
+    const files = [claudeFile('c1.json'), kimiFile('k1.json')];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+
+    expect(root.querySelector<HTMLElement>('[data-provider="kimi"]')?.getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector<HTMLElement>('[data-provider="all"]')?.getAttribute('aria-selected')).toBe('false');
+    expect(root.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')?.getAttribute('aria-pressed')).toBe('true');
+    // Provider filter applies from the first render.
+    expect(root.querySelectorAll('.card').length).toBe(1);
+    app.destroy();
+  });
+
+  it('writes the provider selection to sessionStorage when a tab is clicked', async () => {
+    const files = [claudeFile('c1.json'), kimiFile('k1.json')];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+
+    root.querySelector<HTMLElement>('[data-provider="kimi"]')!.click();
+    expect(JSON.parse(sessionStorage.getItem(key) ?? 'null')).toEqual({ provider: 'kimi' });
+    app.destroy();
+  });
+
+  it('writes the sort mode to sessionStorage when a sort tab is clicked', async () => {
+    const files = [claudeFile('c1.json')];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+
+    root.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')!.click();
+    expect(JSON.parse(sessionStorage.getItem(key) ?? 'null')).toEqual({ sortMode: 'soonest' });
+    app.destroy();
+  });
+
+  it('keeps both preferences across a simulated reload', async () => {
+    const files = [claudeFile('c1.json'), kimiFile('k1.json')];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+    root.querySelector<HTMLElement>('[data-provider="kimi"]')!.click();
+    root.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')!.click();
+    app.destroy();
+
+    const root2 = newRoot();
+    const app2 = await startApp({
+      root: root2, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+    expect(root2.querySelector<HTMLElement>('[data-provider="kimi"]')?.getAttribute('aria-selected')).toBe('true');
+    expect(root2.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')?.getAttribute('aria-pressed')).toBe('true');
+    app2.destroy();
+  });
+
+  it('falls back to defaults and still starts when the stored payload is corrupt', async () => {
+    sessionStorage.setItem(key, '{bad json');
+    const files = [claudeFile('c1.json'), kimiFile('k1.json')];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+
+    expect(root.querySelector<HTMLElement>('[data-provider="all"]')?.getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector<HTMLElement>('.sortTab[data-sort="default"]')?.getAttribute('aria-pressed')).toBe('true');
+    expect(root.querySelectorAll('.card').length).toBe(2);
+    app.destroy();
+  });
+
+  it('never persists token, quota, authIndex or authFile payloads', async () => {
+    const files = [codexFile('codex.json')];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false,
+      session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
+    });
+    root.querySelector<HTMLElement>('[data-provider="codex"]')!.click();
+    const stored = sessionStorage.getItem(key) ?? '';
+    expect(stored).not.toMatch(/token|quota|authIndex|authFile|secret/i);
+    expect(Object.keys(JSON.parse(stored))).toEqual(['provider']);
+    app.destroy();
   });
 });
 

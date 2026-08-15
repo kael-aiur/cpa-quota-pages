@@ -11,7 +11,13 @@ const PROVIDERS = new Set<Provider>(['claude', 'antigravity', 'codex', 'xai', 'k
 const SORT_MODES = new Set<SortMode>(['default', 'soonest']);
 
 function storage(): Storage | null {
-  return typeof window === 'undefined' ? null : window.sessionStorage;
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage;
+  } catch {
+    // Storage access can be denied (sandboxed frames, privacy modes); treat as absent.
+    return null;
+  }
 }
 
 export function readUiPreferences(): UiPreferences {

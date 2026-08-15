@@ -37,6 +37,7 @@ import type { AuthenticatedSession } from '../auth/types';
 import { createMinuteClock } from '../quota/minuteClock';
 import type { MinuteClock } from '../quota/minuteClock';
 import { buildAnonymousAccountLabel } from '../quota/identity';
+import { readUiPreferences, writeProviderPreference, writeSortModePreference } from '../quota/uiPreferences';
 import type { AccountEntry } from '../quota/types';
 import type { ProviderQueryContext } from '../providers/types';
 import { createQuotaActions } from './actions';
@@ -90,7 +91,15 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
   let actions: QuotaActions | undefined;
   let themeCleanup: (() => void) | undefined;
   const labelCache = new Map<string, string>();
-  const uiState: QuotaUiState = initialUiState();
+  // Session-scoped UI preferences: seed the provider/sort selections from
+  // sessionStorage (validated + clamped inside readUiPreferences; corrupt or
+  // missing data degrades to the defaults). Never token/quota/auth material.
+  const preferences = readUiPreferences();
+  const uiState: QuotaUiState = {
+    ...initialUiState(),
+    ...(preferences.provider !== undefined ? { selectedProvider: preferences.provider } : {}),
+    ...(preferences.sortMode !== undefined ? { sortMode: preferences.sortMode } : {}),
+  };
 
   // Theme: URL ?theme= wins; otherwise track the system preference.
   if (doc) {
@@ -197,11 +206,16 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     onSelectProvider: (selection) => {
       uiState.selectedProvider = selection;
       uiState.currentPage = 1;
+      // Persist only real providers; "all" is the implicit default and is not stored.
+      if (selection !== 'all') {
+        try { writeProviderPreference(selection); } catch { /* storage unavailable; preference is optional */ }
+      }
       if (!destroyed) render();
     },
     onSelectSort: (sortMode) => {
       uiState.sortMode = sortMode;
       uiState.currentPage = 1;
+      try { writeSortModePreference(sortMode); } catch { /* storage unavailable; preference is optional */ }
       if (!destroyed) render();
     },
     onPageChange: (page) => {
