@@ -8,7 +8,12 @@ import { renderProviderBody } from './renderProviderBody';
 export interface RenderOptions {
   mode: 'user' | 'admin';
   revealAccountIdentity: boolean;
-  canConsumeCodexReset: boolean;
+  /**
+   * Reset-capability flag plus the admin-owned reset button label. The label
+   * is supplied by the admin flow so the shared (user) bundle carries no
+   * reset-related copy at all. `null` disables the reset button.
+   */
+  resetAction: { label: string } | null;
   /** Precomputed SHA-256 anonymous label (see quota/identity). */
   anonymousLabel: string;
   /** Snapshot time for reset formatting; defaults to Date.now(). */
@@ -139,14 +144,14 @@ export function renderQuotaCard(
   queryBtn.addEventListener('click', () => handlers.onQuery?.(entry.id));
   actions.append(queryBtn);
 
-  const canReset = options.mode === 'admin' && entry.provider === 'codex' && options.canConsumeCodexReset;
-  if (canReset) {
+  const canReset = options.mode === 'admin' && entry.provider === 'codex' && options.resetAction !== null;
+  if (canReset && options.resetAction) {
     const resetBtn = h('button', {
       class: 'btn btn-sm',
       attrs: { type: 'button', 'data-action': 'reset' },
     });
     resetBtn.append(resetIcon());
-    resetBtn.append(h('span', { class: 'btnLabel', text: '重置额度' }));
+    resetBtn.append(h('span', { class: 'btnLabel', text: options.resetAction.label }));
     resetBtn.addEventListener('click', () => handlers.onReset?.(entry.id));
     actions.append(resetBtn);
   }

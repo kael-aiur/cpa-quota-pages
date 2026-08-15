@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import type { AuthenticatedSession } from '../../src/auth/types';
 import type { ApiCallResult, AuthFile, CpaApi } from '../../src/api/types';
 import { createQuotaApp } from '../../src/app/createQuotaApp';
-import { createResetRequestHandler } from '../../src/admin/resetFlow';
+import { createResetRequestHandler, RESET_BUTTON_LABEL } from '../../src/admin/resetFlow';
 import type { CodexResetCapability } from '../../src/app/types';
 import type { MinuteClock } from '../../src/quota/minuteClock';
 import type { ProviderQuery, ProviderQuotaResult } from '../../src/providers/types';
@@ -373,6 +373,7 @@ describe('createQuotaApp orchestration', () => {
         capability: (bridge) => consume(bridge.account.file, bridge.context),
         resolveTrigger: () => document.activeElement instanceof HTMLElement ? document.activeElement : root,
       }),
+      resetButtonLabel: RESET_BUTTON_LABEL,
       session: fakeSession(), api, media: fakeMedia(), clock: fakeClock(),
     });
 
@@ -399,6 +400,7 @@ describe('createQuotaApp orchestration', () => {
           capability: (bridge) => consume(bridge.account.file, bridge.context),
           resolveTrigger: () => document.activeElement instanceof HTMLElement ? document.activeElement : root,
         }),
+        resetButtonLabel: RESET_BUTTON_LABEL,
         session: fakeSession(), api: fakeApi([file]), media: fakeMedia(), clock: fakeClock(),
       });
       root.querySelector<HTMLElement>('[data-action="reset"]')!.click();

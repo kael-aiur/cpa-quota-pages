@@ -58,6 +58,14 @@ export interface QuotaAppOptions {
    * write-path symbol can reach the user-facing bundle.
    */
   onResetRequest?: (bridge: QuotaResetBridge) => void;
+  /**
+   * Reset button label, owned by the admin flow (see
+   * {@link RESET_BUTTON_LABEL} in `src/admin/resetFlow`). Keeping the copy out
+   * of the shared modules is what leaves zero reset-related strings in the
+   * user bundle. Defaults to a neutral 重置 when only the handler is injected
+   * (unit tests); the admin entry always passes the real label.
+   */
+  resetButtonLabel?: string;
 
   /** Override the page URL used for bootstrap (defaults to the current location). */
   url?: URL;

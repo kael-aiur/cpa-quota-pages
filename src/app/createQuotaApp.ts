@@ -238,7 +238,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     root,
     mode,
     revealAccountIdentity,
-    canConsumeCodexReset: mode === 'admin' && Boolean(options.onResetRequest),
+    resetAction: mode === 'admin' && options.onResetRequest ? { label: options.resetButtonLabel ?? '重置' } : null,
     pageSize,
     now: () => clock.getSnapshot(),
     clock,

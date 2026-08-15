@@ -14,7 +14,7 @@ import '../styles/cards.css';
 import '../styles/timeline.css';
 import { createQuotaApp } from '../app/createQuotaApp';
 import { consumeCodexResetCredit } from '../admin/codexReset';
-import { createResetRequestHandler } from '../admin/resetFlow';
+import { createResetRequestHandler, RESET_BUTTON_LABEL } from '../admin/resetFlow';
 
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) {
@@ -29,6 +29,7 @@ const app = createQuotaApp({
     capability: (bridge) => consumeCodexResetCredit(bridge.account.file, bridge.context),
     resolveTrigger: () => (document.activeElement instanceof HTMLElement ? document.activeElement : root),
   }),
+  resetButtonLabel: RESET_BUTTON_LABEL,
   title: '额度查询（管理员）',
 });
 

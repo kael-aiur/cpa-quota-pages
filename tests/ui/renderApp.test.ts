@@ -86,7 +86,7 @@ describe('renderApp auth gate', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -100,7 +100,7 @@ describe('renderApp auth gate', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -113,7 +113,7 @@ describe('renderApp auth gate', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -128,7 +128,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -142,7 +142,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 2, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -156,7 +156,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 2, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -169,7 +169,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -182,7 +182,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 2, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -194,7 +194,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -210,7 +210,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock(NOW);
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
@@ -227,7 +227,7 @@ describe('renderApp authenticated shell', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 20, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handle.render(authenticatedState([account('a', 'claude')]), ui(), 'authenticated');
@@ -245,7 +245,7 @@ describe('renderApp authenticated shell', () => {
     const clock = fakeClock();
     const h = handlers();
     const handle = renderApp({
-      root, mode: 'user', revealAccountIdentity: false, canConsumeCodexReset: false,
+      root, mode: 'user', revealAccountIdentity: false, resetAction: null,
       pageSize: 2, now: () => clock.getSnapshot(), clock, handlers: h,
     });
     handles.push(handle);

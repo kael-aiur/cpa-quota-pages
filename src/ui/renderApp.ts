@@ -60,7 +60,8 @@ export interface RenderAppOptions {
   root: HTMLElement;
   mode: 'user' | 'admin';
   revealAccountIdentity: boolean;
-  canConsumeCodexReset: boolean;
+  /** Admin-owned reset capability flag + button label; `null` hides the reset button. */
+  resetAction: { label: string } | null;
   pageSize: number;
   now(): number;
   clock: MinuteClock;
@@ -264,7 +265,7 @@ export function renderApp(options: RenderAppOptions): RenderAppHandle {
     const cardOptions: RenderOptions = {
       mode: options.mode,
       revealAccountIdentity: options.revealAccountIdentity,
-      canConsumeCodexReset: options.canConsumeCodexReset,
+      resetAction: options.resetAction,
       anonymousLabel: '',
       nowMs,
     };

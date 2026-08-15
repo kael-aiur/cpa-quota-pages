@@ -12,6 +12,14 @@
 import type { QuotaResetBridge } from '../app/types';
 import { openConfirmDialog } from '../ui/confirmDialog';
 
+/**
+ * The admin reset button label. It lives HERE (admin module) so the shared
+ * render modules never contain reset-related copy — the user bundle ships
+ * with zero reset strings (only the read-only 可用重置额度 meta label, which
+ * is a different, always-shown Codex quota field, is allowed).
+ */
+export const RESET_BUTTON_LABEL = '重置额度';
+
 export function createResetRequestHandler(options: {
   capability: (bridge: QuotaResetBridge) => Promise<unknown>;
   /** Element that should receive focus when the dialog closes. */

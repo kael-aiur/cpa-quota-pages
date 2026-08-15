@@ -29,7 +29,7 @@ function userOptions(anonymousLabel: string, overrides: Partial<RenderOptions> =
   return {
     mode: 'user',
     revealAccountIdentity: false,
-    canConsumeCodexReset: false,
+    resetAction: null,
     anonymousLabel,
     nowMs: NOW,
     ...overrides,
@@ -40,7 +40,7 @@ function adminOptions(anonymousLabel: string, overrides: Partial<RenderOptions> 
   return {
     mode: 'admin',
     revealAccountIdentity: true,
-    canConsumeCodexReset: true,
+    resetAction: { label: '重置额度' },
     anonymousLabel,
     nowMs: NOW,
     ...overrides,
@@ -138,7 +138,7 @@ describe('renderQuotaCard identity masking', () => {
   it('shows no reset button and wires no reset handler in user mode', async () => {
     const label = await buildAnonymousAccountLabel('codex', 'secret-file.json');
     const h = handlers();
-    const card = renderQuotaCard(secretEntry(), idle, userOptions(label, { canConsumeCodexReset: true }), h);
+    const card = renderQuotaCard(secretEntry(), idle, userOptions(label, { resetAction: { label: '重置额度' } }), h);
 
     expect(card.querySelector('[data-action="reset"]')).toBeNull();
     card.querySelector('[data-action="query"]')?.dispatchEvent(new Event('click', { bubbles: true }));
@@ -162,6 +162,9 @@ describe('renderQuotaCard identity masking', () => {
 
     const resetBtn = card.querySelector('[data-action="reset"]');
     expect(resetBtn).not.toBeNull();
+    // The label is injected by the admin flow (resetAction.label), never a
+    // shared-module constant — that is what keeps reset copy out of user dist.
+    expect(resetBtn?.textContent ?? '').toContain('重置额度');
     resetBtn?.dispatchEvent(new Event('click', { bubbles: true }));
     expect(h.onReset).toHaveBeenCalledWith('secret-file.json');
   });

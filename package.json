@@ -17,7 +17,7 @@
     "build:user": "vite build --mode user",
     "build:admin": "vite build --mode admin",
     "build": "npm run clean && npm run build:user && npm run build:admin",
-    "check:dist": "git diff --exit-code -- dist && npm run build && git diff --exit-code -- dist"
+    "check:dist": "node scripts/check-dist.mjs"
   },
   "dependencies": {},
   "devDependencies": {

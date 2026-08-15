@@ -106,9 +106,9 @@ describe('cspHashPlugin hashing primitives', () => {
   });
 
   it('computes the base64 SHA-256 of the script text', () => {
-    expect(computeScriptHash('console.log("quota");')).toBe(
-      Buffer.from('console.log("quota");').toString('base64') === 'x' ? 'x' : computeScriptHash('console.log("quota");'),
-    );
+    // Known vector, precomputed independently with node crypto:
+    //   createHash('sha256').update('console.log("cpa-quota");').digest('base64')
+    expect(computeScriptHash('console.log("cpa-quota");')).toBe('BmzNxl6Z287dJZ8rgof1LPFbC/RGO6Nn9FRttfeRWcE=');
     // Deterministic, standard SHA-256 base64 (43 significant chars + padding).
     expect(computeScriptHash('console.log("quota");')).toMatch(/^[A-Za-z0-9+/]{43}=$/);
     expect(computeScriptHash('a')).not.toBe(computeScriptHash('b'));
@@ -234,6 +234,21 @@ describe('secured artifacts from npm run build', () => {
     expect(html).not.toContain('/rate-limit-reset-credits/consume');
     for (const marker of ADMIN_MODULE_MARKERS) expect(html).not.toContain(marker);
     for (const copy of ADMIN_DIALOG_COPY) expect(html).not.toContain(copy);
+  });
+
+  it('quota.html (user): contains no reset-credit copy at all', () => {
+    // The reset button label lives in the admin flow only (resetAction.label,
+    // injected via src/admin/resetFlow), so the user artifact must carry no
+    // standalone 重置额度 string. Two reset-adjacent strings legitimately
+    // remain and are covered by other tests:
+    //  - 可用重置额度 — read-only Codex quota meta label (Task 7 contract),
+    //  - 额度重置券 — timeline credit marks rendered live in user mode from
+    //    read-only Codex credit data (Task 13 contract).
+    const html = readDist('quota.html');
+    const allResetQuota = html.split('重置额度').length - 1;
+    const readonlyResetQuota = html.split('可用重置额度').length - 1;
+    expect(allResetQuota).toBe(readonlyResetQuota);
+    expect(readDist('quota-admin.html')).toContain('=`重置额度`;');
   });
 
   it('quota-admin.html (admin): contains the consume endpoint', () => {
