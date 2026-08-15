@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import type { AuthenticatedSession } from '../../src/auth/types';
 import type { ApiCallResult, AuthFile, CpaApi } from '../../src/api/types';
 import { createQuotaApp } from '../../src/app/createQuotaApp';
+import { createQuotaStore, type QuotaStore } from '../../src/app/state';
 import { createResetRequestHandler, RESET_BUTTON_LABEL } from '../../src/admin/resetFlow';
 import type { CodexResetCapability } from '../../src/app/types';
 import type { MinuteClock } from '../../src/quota/minuteClock';
@@ -257,27 +258,55 @@ describe('createQuotaApp orchestration', () => {
   });
 
   it('queries every visible account in batches of at most the page size (max 20)', async () => {
-    // 12 accounts at pageSize 5 still force THREE serialized batches (>2), the
-    // minimum that proves chunking, while keeping the per-publish full-DOM
-    // rebuild cheap: each store publish re-renders the whole page, so the
-    // rendered card count (5, not 25) dominates this test's cost under
-    // parallel-worker CPU starvation. The hard >20 RangeError cap itself is
-    // covered in tests/app/actions.test.ts.
-    const files = Array.from({ length: 12 }, (_, i) => claudeFile(`c${i}.json`));
+    // 25 accounts at pageSize 5 force FIVE serialized batches. 25 > 20 (the
+    // MAX_BATCH_SIZE a non-chunked implementation would overflow), so a
+    // regression back to "pass every visible id in one call" throws a
+    // RangeError, never marks a card loading and surfaces no success — caught
+    // by BOTH the direct batch observation and the apiCall count below.
+    // Per-publish cost stays as cheap as the deflaked version: derivePage
+    // renders ONLY the current page (5 cards, never 25), and that rendered
+    // card count is what dominates this test under parallel-worker CPU
+    // starvation. The hard >20 RangeError cap itself is covered in
+    // tests/app/actions.test.ts.
+    //
+    // Direct batch observation (injected store): every ACCEPTED beginBatch is
+    // exactly one actions.queryCurrentPage call that passed its guards, and
+    // the loading marks inside that epoch are exactly the chunk's accounts
+    // (loading marks are published before the batch's apiCalls, so a complete
+    // apiCall count implies a complete batch log). => chunking is asserted
+    // independently of the >20 cap.
+    const files = Array.from({ length: 25 }, (_, i) => claudeFile(`c${i}.json`));
     const api = fakeApi(files);
     const calls: string[] = [];
+    const store = createQuotaStore();
+    const batchSizes: number[] = [];
+    const realBeginBatch = store.beginBatch;
+    store.beginBatch = (owner: symbol) => {
+      const accepted = realBeginBatch(owner);
+      if (accepted) batchSizes.push(0); // new queryCurrentPage epoch
+      return accepted;
+    };
+    const realSetQuota = store.setQuota;
+    store.setQuota = (accountId: string, generation: number, quota: Parameters<QuotaStore['setQuota']>[2]) => {
+      if (quota.status === 'loading' && batchSizes.length > 0) batchSizes[batchSizes.length - 1] += 1;
+      return realSetQuota(accountId, generation, quota);
+    };
     const root = newRoot();
     const app = await startApp({
       root, mode: 'user', revealAccountIdentity: false, pageSize: 5,
       session: fakeSession(), api, media: fakeMedia(), clock: fakeClock(),
       providerQueries: { claude: claudeQuery(calls) },
+      store,
     });
 
     root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
     await vi.waitFor(
-      () => expect(mockCount(api.apiCall)).toBe(12),
+      () => expect(mockCount(api.apiCall)).toBe(25),
       { timeout: 15000, interval: 50 },
     );
+    // Chunking observed directly: exactly ceil(25/5) batches, each no larger
+    // than the page size, together covering every visible account.
+    expect(batchSizes).toEqual([5, 5, 5, 5, 5]);
     // No card should be in an error state from a RangeError batch overflow.
     const states = Array.from(root.querySelectorAll('.card')).map((c) => c.getAttribute('data-state'));
     expect(states).not.toContain('error');

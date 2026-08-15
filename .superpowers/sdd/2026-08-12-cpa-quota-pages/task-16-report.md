@@ -286,3 +286,71 @@ simultaneously running real vite builds, starving the event loop past the 20s
 test timeout. Fix: reduced fixture (12 accounts, `pageSize: 5` — still three
 serialized batches, >2, proving chunking) + explicit 30s timeout (Task 9
 precedent).
+
+## Fix round 2 (2026-08-16): restore the batching test's proving power
+
+Scoped re-review finding (N-1, confirmed): the fix-round-1 deflake reduced the
+fixture to 12 visible accounts at `pageSize: 5`. But 12 ≤ MAX_BATCH_SIZE (20),
+so if `handleQueryAll` regressed to passing ALL visible ids to
+`queryCurrentPage` in ONE call, no RangeError would fire and the test would
+still pass — the chunking behavior was untested after the deflake.
+
+Fix (test-only; keeps the deflake win):
+
+1. **Fixture restored to 25 visible accounts, `pageSize: 5` still.** 25 > 20,
+   so a non-chunked implementation throws `RangeError` before marking any card
+   loading (the throw precedes `beginBatch`), no apiCall is issued, and the
+   test's `vi.waitFor(apiCall === 25)` fails. Per-publish render cost is
+   UNCHANGED versus the deflaked version: `derivePage` renders only the current
+   page slice (5 cards, never 25), so the full-DOM rebuild per store publish
+   costs the same as with 12 accounts.
+2. **Direct batch-boundary observation added.** The test injects its own store
+   (`options.store`, existing DI seam — no production code touched) and wraps
+   two methods:
+   - `beginBatch(owner)`: each ACCEPTED call starts exactly one
+     `queryCurrentPage` epoch (acceptance requires passing the destroyed /
+     aborted / `batchInFlight` guards), pushing a new batch counter.
+   - `setQuota(id, gen, quota)`: each `{status:'loading'}` mark increments the
+     current epoch's counter — the loading marks inside one epoch are exactly
+     that chunk's accounts (published before the batch's apiCalls, so a
+     complete apiCall count implies a complete batch log).
+   Assertion: `expect(batchSizes).toEqual([5, 5, 5, 5, 5])` — exactly
+   ceil(25/5) batches, each exactly the page size, together covering all 25.
+   This proves chunking DIRECTLY, independent of the >20 cap, so even an
+   oversized-but-under-20 regression (e.g. batches of 13) is caught.
+3. Timeout kept at 30_000ms; `expect(states).not.toContain('error')` kept.
+
+### TDD red evidence (regression simulations, all reverted after capture)
+
+- **Simulated non-chunked `handleQueryAll`** (one call with all 25 ids;
+  temporarily replaced the chunk loop in `src/app/createQuotaApp.ts`):
+  ```
+  FAIL queries every visible account in batches of at most the page size (max 20)
+  AssertionError: expected +0 to be 25   // vi.waitFor: apiCall count never left 0
+  ```
+  The RangeError fired before any card was marked loading, so zero apiCalls
+  happened and the wait timed out. Strengthened test FAILS the regression.
+- **Simulated oversized-but-legal batches** (stride 13 / chunk 13 — under the
+  >20 cap, no RangeError, clean 25 apiCalls, no overlap): the direct
+  observation caught it precisely where the old test would have been blind:
+  ```
+  expect(batchSizes).toEqual([5, 5, 5, 5, 5])
+  - Expected: [5, 5, 5, 5, 5]
+  + Received: [13, 12]
+  ```
+- Both simulations reverted (`git diff` shows only the test file changed);
+  clean source runs green.
+
+### Verification (on the final test-only change)
+
+- Single test (`npx vitest run tests/app/createQuotaApp.test.ts -t "queries
+  every visible account"`): **5/5 green** (5.7–6.8s each, well under 30s).
+- Full suite (`npm test`): **3/3 consecutive runs green** — 30/30 files,
+  290/290 tests each run (34.6s / 27.6s / 23.1s).
+- `npm run typecheck` → clean (exit 0).
+- `npm run check:dist` → exit 0 ("committed dist matches a clean rebuild of
+  the current sources"). dist unchanged by this round (test-only); the 4
+  self-referential revision-stamp lines re-written during suite runs by the
+  build-running tests were restored via `git checkout -- dist` before
+  check:dist, per the documented procedure.
+- `git diff --check` → clean (exit 0).
