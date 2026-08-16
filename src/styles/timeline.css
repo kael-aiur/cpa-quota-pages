@@ -442,6 +442,18 @@
   border: 0 !important;
 }
 
+/*
+ * A <table> ignores width:1px under automatic table layout — its intrinsic
+ * content width wins, so the sr-only table would otherwise stretch to 500px+
+ * and create horizontal page overflow at narrow widths (the very thing the
+ * timeline's internal scroll region exists to prevent). force the shrink-to-
+ * fit algorithm and let the clipping do its job.
+ */
+table.timelineSrOnly {
+  table-layout: fixed;
+  max-width: 1px;
+}
+
 /* ---------------- Reduced motion ---------------- */
 @media (prefers-reduced-motion: reduce) {
   .timelineModeTab,

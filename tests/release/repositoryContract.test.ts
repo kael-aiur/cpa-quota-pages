@@ -1,0 +1,276 @@
+/**
+ * Repository release contracts (Task 17).
+ *
+ * These tests pin the DEPLOYMENT and RELEASE surface of the repository:
+ * `.github/workflows/ci.yml`, `nginx/example.conf`, `README.md` and
+ * `package.json`. They fail whenever a deployment-relevant regression slips
+ * in — e.g. a raw GitHub URL drifting from the fixed release tag to `main`,
+ * an HTML proxy location that forwards the client query string (and therefore
+ * the Sub2API token) upstream, a dropped `auth_request`, a `/cpa/` rewrite
+ * that duplicates `/v0/management/`, or README copy that overstates the
+ * security model beyond the accepted residual risks of specification §12.2.
+ */
+
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import pkg from '../../package.json';
+
+const projectRoot = resolve(process.cwd());
+
+function readRepositoryFile(relativePath: string): string {
+  const absolute = resolve(projectRoot, relativePath);
+  if (!existsSync(absolute)) {
+    throw new Error(`Missing required repository file: ${relativePath}`);
+  }
+  return readFileSync(absolute, 'utf8');
+}
+
+const ciYaml = readRepositoryFile('.github/workflows/ci.yml');
+const nginxConf = readRepositoryFile('nginx/example.conf');
+const readme = readRepositoryFile('README.md');
+const releaseTag = 'v1.0.0';
+
+/** Strip nginx `#` comments and blank lines so assertions see only directives. */
+function nginxDirectives(conf: string): string[] {
+  return conf
+    .split('\n')
+    .map((line) => {
+      const withoutComment = line.replace(/#.*$/, '');
+      return withoutComment.trim();
+    })
+    .filter((line) => line.length > 0);
+}
+
+/** The body of `location <pattern> { … }` including its braces. */
+function nginxLocationBody(conf: string, locationPattern: string): string {
+  const directives = nginxDirectives(conf).join('\n');
+  const opener = new RegExp(`location\\s+${escapeRegExp(locationPattern)}\\s*\\{`);
+  const opening = opener.exec(directives);
+  if (!opening) {
+    throw new Error(`nginx example has no location ${locationPattern}`);
+  }
+  let depth = 0;
+  let index = opening.index + opening[0].length;
+  for (; index < directives.length; index += 1) {
+    const char = directives[index];
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+  }
+  return directives.slice(opening.index + opening[0].length, index);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+describe('repository contract: CI workflow', () => {
+  it('runs the full release pipeline on pull requests and main pushes', () => {
+    expect(ciYaml).toContain('on:');
+    expect(ciYaml).toMatch(/pull_request/);
+    expect(ciYaml).toMatch(/push:\s*\n?\s*branches:\s*\n?\s*-\s*main/);
+  });
+
+  it('checks out the repository and installs dependencies with npm ci', () => {
+    expect(ciYaml).toMatch(/- uses:\s*actions\/checkout/);
+    expect(ciYaml).toMatch(/npm ci/);
+  });
+
+  it('runs typecheck, unit tests and the production build before e2e', () => {
+    expect(ciYaml).toMatch(/npm run typecheck/);
+    expect(ciYaml).toMatch(/npm test\b/);
+    expect(ciYaml).toMatch(/npm run build\b/);
+  });
+
+  it('installs Chromium and runs the Playwright e2e suite', () => {
+    expect(ciYaml).toMatch(/npx playwright install(?!-with-deps)\s+--with-deps\s+chromium|npx playwright install\s+chromium/);
+    expect(ciYaml).toMatch(/npm run test:e2e/);
+  });
+
+  it('asserts the user artifact cannot consume reset credits', () => {
+    expect(ciYaml).toMatch(/grep\s+-F\s+'\/rate-limit-reset-credits\/consume'\s+dist\/quota\.html/);
+    expect(ciYaml).toMatch(/! grep/);
+  });
+
+  it('fails when the committed dist is not a rebuild of the current sources', () => {
+    expect(ciYaml).toMatch(/npm run check:dist/);
+    expect(ciYaml).toMatch(/git diff --exit-code -- dist/);
+  });
+});
+
+describe('repository contract: nginx example', () => {
+  it('fetches both HTML artifacts from the fixed release tag, never main', () => {
+    expect(nginxConf).toContain(`https://raw.githubusercontent.com/kael-aiur/cpa-quota-pages/${releaseTag}/dist/quota.html`);
+    expect(nginxConf).toContain(`https://raw.githubusercontent.com/kael-aiur/cpa-quota-pages/${releaseTag}/dist/quota-admin.html`);
+    expect(nginxConf).not.toContain('/main/dist/');
+    expect(nginxConf).not.toContain('/HEAD/dist/');
+  });
+
+  it('discards client query strings on both HTML proxy locations', () => {
+    expect(nginxConf).toContain('dist/quota.html?;');
+    expect(nginxConf).toContain('dist/quota-admin.html?;');
+  });
+
+  it('protects the user entry with the Sub2API user auth_request', () => {
+    const body = nginxLocationBody(nginxConf, '= /quota.html');
+    expect(body).toContain('auth_request /_sub2api_auth;');
+    expect(body).not.toContain('auth_request /_sub2api_admin_auth;');
+  });
+
+  it('protects the admin entry with the dedicated admin auth_request', () => {
+    const body = nginxLocationBody(nginxConf, '= /quota-admin.html');
+    expect(body).toContain('auth_request /_sub2api_admin_auth;');
+  });
+
+  it('clears Authorization, Cookie and Referer towards the GitHub upstream', () => {
+    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+      const body = nginxLocationBody(nginxConf, location);
+      expect(body).toContain('proxy_set_header Authorization "";');
+      expect(body).toContain('proxy_set_header Cookie "";');
+      expect(body).toContain('proxy_set_header Referer "";');
+    }
+  });
+
+  it('enables TLS SNI and pins the upstream Host for raw.githubusercontent.com', () => {
+    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+      const body = nginxLocationBody(nginxConf, location);
+      expect(body).toContain('proxy_ssl_server_name on;');
+      expect(body).toContain('proxy_set_header Host raw.githubusercontent.com;');
+    }
+  });
+
+  it('serves the HTML with the hardened response headers', () => {
+    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+      const body = nginxLocationBody(nginxConf, location);
+      expect(body).toContain('proxy_hide_header Content-Type;');
+      expect(body).toMatch(/add_header Content-Type "text\/html; charset=utf-8" always;/);
+      expect(body).toContain('add_header Referrer-Policy "no-referrer" always;');
+      expect(body).toContain('add_header Cache-Control "private, no-store" always;');
+      expect(body).toContain('add_header X-Content-Type-Options "nosniff" always;');
+      expect(body).toMatch(/add_header Content-Security-Policy "frame-ancestors 'self'"/);
+    }
+  });
+
+  it('routes /cpa/ through auth_request, the secret include and a stripping proxy_pass', () => {
+    const body = nginxLocationBody(nginxConf, '/cpa/');
+    expect(body).toContain('auth_request /_sub2api_auth;');
+    expect(body).toContain('include /etc/nginx/secrets/cpa-management-auth.conf;');
+    expect(body).toContain('proxy_pass http://cpa_backend/;');
+  });
+
+  it('never duplicates /v0/management/ in the /cpa/ proxy path', () => {
+    const body = nginxLocationBody(nginxConf, '/cpa/');
+    // The proxy_pass directive itself must be exactly the backend root + the
+    // location-stripping trailing slash; adding /v0/management/ would yield
+    // /v0/management/v0/management/api-call upstream.
+    const proxyPassLines = nginxDirectives(nginxConf).filter((line) => /^proxy_pass\b/.test(line));
+    expect(proxyPassLines.length).toBeGreaterThan(0);
+    for (const line of proxyPassLines) {
+      expect(line).not.toMatch(/v0\/management/);
+    }
+    const bodyProxyPass = nginxDirectives(body).filter((line) => /^proxy_pass\b/.test(line));
+    expect(bodyProxyPass).toEqual(['proxy_pass http://cpa_backend/;']);
+  });
+
+  it('documents that the admin auth endpoint is a deployment-supplied administrator check', () => {
+    expect(nginxConf).toMatch(/admin/i);
+    expect(nginxConf).toMatch(/管理员|administrator/i);
+  });
+
+  it('documents the secret include file so the key never enters the repository', () => {
+    expect(nginxConf).toContain('/etc/nginx/secrets/cpa-management-auth.conf');
+    expect(nginxConf).not.toMatch(/Bearer [A-Za-z0-9._~+/=-]{8,}/);
+  });
+});
+
+describe('repository contract: README', () => {
+  it('documents setup, build and the local preview commands', () => {
+    for (const command of ['npm ci', 'npm run build', 'npm run typecheck', 'npm test', 'npm run test:e2e']) {
+      expect(readme).toContain(command);
+    }
+    expect(readme).toMatch(/npm run dev:user|vite --mode user/);
+  });
+
+  it('documents the two deployed URLs and their auth_request boundaries', () => {
+    expect(readme).toContain('/quota.html');
+    expect(readme).toContain('/quota-admin.html');
+    expect(readme).toContain('/_sub2api_auth');
+    expect(readme).toContain('/_sub2api_admin_auth');
+  });
+
+  it('documents the release/tag update and rollback flow', () => {
+    expect(readme).toContain(releaseTag);
+    expect(readme).toMatch(/rollback|回滚/i);
+    expect(readme).toMatch(/tag/i);
+  });
+
+  it('documents the source-revision meta semantics', () => {
+    expect(readme).toContain('cpa-quota-source-revision');
+  });
+
+  it('documents the CPA management key secret include', () => {
+    expect(readme).toContain('/etc/nginx/secrets/cpa-management-auth.conf');
+  });
+
+  it('states that /_sub2api_admin_auth is a deployment contract returning success only for administrators', () => {
+    expect(readme).toMatch(/_sub2api_admin_auth[^]*administrator|_sub2api_admin_auth[^]*管理员/s);
+    expect(readme).toMatch(/2xx|成功|success/i);
+  });
+
+  it('lists all six accepted residual risks from specification §12.2', () => {
+    expect(readme).toMatch(/12\.2|已接受(的)?(残余)?风险|accepted (residual )?risks/i);
+    const riskMarkers = readme.match(/残余风险|residual risk/gi);
+    expect(riskMarkers === null ? 0 : riskMarkers.length).toBeGreaterThanOrEqual(1);
+
+    const numberedRiskList = /^[-*\s]*\d+\.\s+.*(?:auth-files|脱敏|api-call|consume|管理密钥|key|代理|绕过|保密|授权|构造)/gim;
+    const matches = readme.match(numberedRiskList) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('covers the concrete substance of each accepted risk', () => {
+    // 1. Raw /auth-files response remains visible to users who can open the page.
+    expect(readme).toMatch(/auth-files[^]*可见|auth-files[^]*visible|原始响应/is);
+    // 2. User-page visual redaction is not a confidentiality boundary.
+    expect(readme).toMatch(/脱敏[^]*保密|脱敏[^]*边界|redaction[^]*boundar|visual redaction/is);
+    // 3. /v0/management/api-call is a general proxy users can call directly.
+    expect(readme).toMatch(/api-call[^]*通用|api-call[^]*general|api-call[^]*代理|api-call[^]*proxy/is);
+    // 4/5. Hiding the consume control is not an authorization boundary and can
+    //      be hand-crafted by a regular user.
+    expect(readme).toMatch(/consume|重置券|手工构造/is);
+    // 6. The injected CPA key prevents string leakage but not full proxy capability.
+    expect(readme).toMatch(/key[^]*代理|key[^]*proxy|密钥[^]*能力|capability/is);
+  });
+
+  it('never claims server-side isolation for the user page', () => {
+    // Every mention of isolation (Chinese or English) must be a DISCLAIMER —
+    // the line carrying it has to contain a negation/prohibition marker, so
+    // the README can warn against the mischaracterization but never assert it.
+    const negationMarkers = /不是|不得|不要|不构成|不具备|无法|从未|never|not\b|only entry|no\b/i;
+    const isolationMention = /隔离|isolation|isolated/i;
+    const offending: string[] = [];
+    for (const line of readme.split('\n')) {
+      if (isolationMention.test(line) && !negationMarkers.test(line)) {
+        offending.push(line.trim());
+      }
+    }
+    expect(offending, 'README lines mentioning isolation without a negation').toEqual([]);
+
+    // And the affirmative-claim phrasings are banned outright.
+    for (const pattern of [/具备服务端隔离/, /实现服务端隔离/, /提供服务端隔离/, /强隔离/, /server[- ]side isolation is (provided|enforced)/i]) {
+      expect(readme, `README must not match ${pattern}`).not.toMatch(pattern);
+    }
+  });
+});
+
+describe('repository contract: package.json', () => {
+  it('exposes the release verification scripts used by CI and the README', () => {
+    const scripts = pkg.scripts as Record<string, string>;
+    for (const name of ['typecheck', 'test', 'test:e2e', 'build', 'check:dist']) {
+      expect(scripts, `package.json is missing the ${name} script`).toHaveProperty(name);
+    }
+    expect(scripts['test:e2e']).toBe('playwright test');
+  });
+});

@@ -105,7 +105,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
   if (doc) {
     const media = options.media
       ?? (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-        ? window.matchMedia('(prefers-color-scheme: light)')
+        ? window.matchMedia('(prefers-color-scheme: dark)')
         : undefined);
     if (media) {
       const requested = (options.url ? options.url.searchParams.get('theme') : null)
