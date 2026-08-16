@@ -140,9 +140,26 @@ describe('repository contract: nginx example', () => {
     expect(nginxConf).not.toContain('/HEAD/dist/');
   });
 
-  it('discards client query strings on both HTML proxy locations', () => {
-    expect(nginxConf).toContain('dist/quota.html?;');
-    expect(nginxConf).toContain('dist/quota-admin.html?;');
+  it('discards client query strings before any upstream hop on both HTML entries', () => {
+    // raw.githubusercontent.com answers 404 for an unvalidated ?token=… query
+    // parameter (it is GitHub's own raw-access-token parameter; observed live:
+    // ?token=231 -> 404 while ?TOKEN=231 / ?user_id=1 -> 200). A trailing "?"
+    // on proxy_pass only cleans the URL nginx itself builds — an outer
+    // gateway can re-append the original query. The contract is therefore a
+    // rewrite-phase strip to an `internal` location whose proxy_pass is a
+    // fixed query-free URL.
+    for (const [entry, internal] of [
+      ['= /quota.html', '= /_quota_html'],
+      ['= /quota-admin.html', '= /_quota_admin_html'],
+    ] as const) {
+      const entryBody = nginxLocationBody(nginxConf, entry);
+      expect(entryBody).toMatch(new RegExp(`rewrite\\s+\\^\\s+${escapeRegExp(internal.slice(2))}\\?\\s+break;`));
+      const upstreamBody = nginxLocationBody(nginxConf, internal);
+      expect(upstreamBody).toContain('internal;');
+      const proxyPass = nginxDirectives(upstreamBody).find((line) => /^proxy_pass\b/.test(line));
+      expect(proxyPass).toBeDefined();
+      expect(proxyPass).not.toContain('?');
+    }
   });
 
   it('protects the user entry with the Sub2API user auth_request', () => {
@@ -157,7 +174,7 @@ describe('repository contract: nginx example', () => {
   });
 
   it('clears Authorization, Cookie and Referer towards the GitHub upstream', () => {
-    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+    for (const location of ['= /_quota_html', '= /_quota_admin_html']) {
       const body = nginxLocationBody(nginxConf, location);
       expect(body).toContain('proxy_set_header Authorization "";');
       expect(body).toContain('proxy_set_header Cookie "";');
@@ -166,7 +183,7 @@ describe('repository contract: nginx example', () => {
   });
 
   it('enables TLS SNI and pins the upstream Host for raw.githubusercontent.com', () => {
-    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+    for (const location of ['= /_quota_html', '= /_quota_admin_html']) {
       const body = nginxLocationBody(nginxConf, location);
       expect(body).toContain('proxy_ssl_server_name on;');
       expect(body).toContain('proxy_set_header Host raw.githubusercontent.com;');
@@ -174,7 +191,7 @@ describe('repository contract: nginx example', () => {
   });
 
   it('serves the HTML with the hardened response headers', () => {
-    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+    for (const location of ['= /_quota_html', '= /_quota_admin_html']) {
       const body = nginxLocationBody(nginxConf, location);
       expect(body).toContain('proxy_hide_header Content-Type;');
       expect(body).toMatch(/add_header Content-Type "text\/html; charset=utf-8" always;/);
@@ -196,7 +213,7 @@ describe('repository contract: nginx example', () => {
     // failure was observed live at https://llm.kael.site:8444/cpa/quota.html:
     // "Blocked script execution ... because the document's frame is sandboxed and
     // the 'allow-scripts' permission is not set".
-    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+    for (const location of ['= /_quota_html', '= /_quota_admin_html']) {
       const body = nginxLocationBody(nginxConf, location);
       for (const header of [
         'proxy_hide_header Content-Security-Policy;',

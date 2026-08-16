@@ -107,19 +107,25 @@ npx vite preview --mode user   # http://127.0.0.1:4173/quota.html
 | `/quota.html` | `/_sub2api_auth` | 只读额度查询；账号身份以匿名哈希展示 |
 | `/quota-admin.html` | `/_sub2api_admin_auth` | 完整账号身份 + Codex 额度重置 |
 
-两个 location 都以固定 tag 从 GitHub raw 拉取，并以 `proxy_pass …?;` 结尾
-**丢弃客户端查询字符串**，因此入口 URL 携带的 `?token=…`（Sub2API token）不会被
-转发给 GitHub。页面在启动时读取并立即从地址栏移除该 token，且从不写入
+两个入口 location 都以固定 tag 从 GitHub raw 拉取，并通过 **rewrite 阶段剥离
+查询字符串**后内部跳转到 `internal` 上游 location，因此入口 URL 携带的
+`?token=…`（Sub2API token）不会被转发给 GitHub。**不能用 `proxy_pass …?;` 尾缀
+方案**：GitHub raw 会把 query 中的 `token` 参数当作它自己的 raw 访问令牌校验，
+非法值直接 404（实测 `?token=231` → 404，而 `?TOKEN=231`、`?user_id=1` → 200）；
+且外层网关可能把原始 query 重新拼回，`?` 尾缀只清理 nginx 自己构造的 URL，任何
+一层透传都会让页面挂掉。页面在启动时读取并立即从地址栏移除该 token，且从不写入
 Web Storage 或 Cookie。
 
 ## Nginx 与密钥注入
 
 完整示例见 [`nginx/example.conf`](nginx/example.conf)。要点：
 
-- `location = /quota.html` / `location = /quota-admin.html`：固定 tag raw URL
-  （`…/v1.0.0/dist/quota.html?;`），`proxy_ssl_server_name on` +
-  `Host raw.githubusercontent.com`（SNI/Host 正确），清空
-  `Authorization` / `Cookie` / `Referer`，`Content-Type` 显式设为
+- `location = /quota.html` / `location = /quota-admin.html`：只做鉴权 +
+  `rewrite ^ /_quota_html? break;`（`?` 在 rewrite 阶段可靠地剥掉 query），
+  跳转到 `internal` 的 `/_quota_html` / `/_quota_admin_html`；后者以固定 tag
+  raw URL（`…/v0.1.0/dist/quota.html`，**无 query**）proxy_pass，
+  `proxy_ssl_server_name on` + `Host raw.githubusercontent.com`（SNI/Host
+  正确），清空 `Authorization` / `Cookie` / `Referer`，`Content-Type` 显式设为
   `text/html; charset=utf-8`，并输出 `Referrer-Policy: no-referrer`、
   `Cache-Control: private, no-store`、`X-Content-Type-Options: nosniff` 和
   `Content-Security-Policy: frame-ancestors 'self'`（frame-ancestors 无法由
