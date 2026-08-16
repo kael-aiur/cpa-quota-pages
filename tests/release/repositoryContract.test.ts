@@ -42,6 +42,22 @@ function nginxDirectives(conf: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+/**
+ * Flatten nginx comments into prose: strip `#` prefixes, collapse the runs of
+ * spaces the comment indentation used, and re-join so a sentence wrapped over
+ * several comment lines matches as one contiguous string.
+ */
+function nginxConfShadow(conf: string): string {
+  return conf
+    .split('\n')
+    .map((line) => {
+      const comment = /^(\s*#\s?)/.exec(line);
+      return comment ? line.slice(comment[0].length) : '';
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ');
+}
+
 /** The body of `location <pattern> { … }` including its braces. */
 function nginxLocationBody(conf: string, locationPattern: string): string {
   const directives = nginxDirectives(conf).join('\n');
@@ -91,13 +107,28 @@ describe('repository contract: CI workflow', () => {
   });
 
   it('asserts the user artifact cannot consume reset credits', () => {
-    expect(ciYaml).toMatch(/grep\s+-F\s+'\/rate-limit-reset-credits\/consume'\s+dist\/quota\.html/);
-    expect(ciYaml).toMatch(/! grep/);
+    // Every gate must be a `if grep -qF …; then exit 1; fi` block. A bare
+    // multi-line `! grep` list is a dead gate under `bash -e`: `!` pipelines
+    // are exempt from errexit and the step status is the LAST line's, so any
+    // violation above the final line passes silently.
+    expect(ciYaml).toMatch(/if grep -qF '\/rate-limit-reset-credits\/consume' dist\/quota\.html; then/);
+    expect(ciYaml).toMatch(/exit 1/);
+    expect(ciYaml).not.toMatch(/^\s*!\s*grep/m);
+    // All four gates survive in the workflow (user+admin consume, user+admin assets).
+    expect(ciYaml.match(/if (! )?grep -qF/g) ?? []).toHaveLength(4);
+    expect(ciYaml).toMatch(/if ! grep -qF '\/rate-limit-reset-credits\/consume' dist\/quota-admin\.html; then/);
+    expect(ciYaml).toMatch(/if grep -qF '\/assets\/' dist\/quota\.html; then/);
+    expect(ciYaml).toMatch(/if grep -qF '\/assets\/' dist\/quota-admin\.html; then/);
   });
 
   it('fails when the committed dist is not a rebuild of the current sources', () => {
     expect(ciYaml).toMatch(/npm run check:dist/);
-    expect(ciYaml).toMatch(/git diff --exit-code -- dist/);
+    // The workflow must restore the committed dist (NOT `git add -A dist`)
+    // before check:dist: the earlier Build step re-stamps dist with
+    // GITHUB_SHA, and staging that would poison the index so check:dist's
+    // worktree-vs-index diff is a guaranteed mismatch.
+    expect(ciYaml).toMatch(/git checkout -- dist\s*\n\s*npm run check:dist/);
+    expect(ciYaml).not.toMatch(/git add -A dist/);
   });
 });
 
@@ -176,8 +207,19 @@ describe('repository contract: nginx example', () => {
   });
 
   it('documents that the admin auth endpoint is a deployment-supplied administrator check', () => {
-    expect(nginxConf).toMatch(/admin/i);
-    expect(nginxConf).toMatch(/管理员|administrator/i);
+    // Anchored to the actual scope-comment sentence (not merely "the file
+    // mentions admin"): /_sub2api_admin_auth must be a deployment-supplied
+    // auth_request that returns 2xx only after server-side validation that
+    // the caller is an administrator, and the HTML itself parses no roles.
+    // Comment line prefixes (`#   * `, `#     `) are stripped first so the
+    // assertions see the prose, not the comment syntax.
+    const prose = nginxConfShadow(nginxConf);
+    expect(prose).toContain(
+      '`/_sub2api_admin_auth` must be an auth_request endpoint provided by your Sub2API deployment that returns 2xx ONLY after server-side validation that the caller is an ADMINISTRATOR.',
+    );
+    expect(prose).toContain('the admin gate is exactly this endpoint');
+    expect(prose).toContain('2xx only when server-side role validation proves the caller is an administrator');
+    expect(prose).toContain('the entire admin authorization decision for this entry');
   });
 
   it('documents the secret include file so the key never enters the repository', () => {

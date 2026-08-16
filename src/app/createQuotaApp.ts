@@ -16,9 +16,10 @@
  *    the valid range by the pure view.
  *  - **List refresh issues no quota query**: the refresh handler reloads
  *    auth-files only.
- *  - **Current-page batch (max 20)**: "query all" chunks the visible accounts
- *    into page-sized batches so `actions.queryCurrentPage` (which rejects >20)
- *    never overflows; a single card failure never aborts its siblings.
+ *  - **Query all = current page only (spec §7.1)**: the "query all" handler
+ *    queries exactly the accounts the view renders on the current page (≤20,
+ *    matching the official #/quota behavior); it never walks the whole list,
+ *    and a single card failure never aborts its siblings.
  *  - **Auth invalidation hides quota**: a session abort invalidates the store
  *    and re-renders the auth gate, so quota never survives a lost session.
  *  - **Destroy is idempotent**: clock, in-flight work, listeners, theme, DOM
@@ -48,7 +49,7 @@ import { createQuotaStore } from './state';
 import type { QuotaErrorInfo, QuotaLoadState, QuotaStore } from './state';
 import type { QuotaAppController, QuotaAppOptions, QuotaResetBridge } from './types';
 import {
-  deriveVisibleAccounts,
+  derivePage,
   initialUiState,
   renderApp,
   type AuthPhase,
@@ -141,15 +142,15 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
 
   const handleQueryAll = async (): Promise<void> => {
     if (!actions || destroyed) return;
-    const visible = deriveVisibleAccounts(store.getState(), uiState);
-    for (let offset = 0; offset < visible.length; offset += pageSize) {
-      if (destroyed || destroyController.signal.aborted) return;
-      const chunk = visible.slice(offset, offset + pageSize).map((account) => account.id);
-      try {
-        await actions.queryCurrentPage(chunk);
-      } catch {
-        // A batch-level failure is surfaced per-card through the store; keep querying the rest.
-      }
+    // Specification §7.1: “查询全部额度”只查询当前页，最多 20 个认证账号.
+    // derivePage applies the same sort + clamp the view renders, so this is
+    // exactly the account set the user sees; pageSize is capped at 20 by the
+    // entries, which keeps actions.queryCurrentPage (hard cap 20) satisfied.
+    const page = derivePage(store.getState(), uiState, pageSize);
+    try {
+      await actions.queryCurrentPage(page.items.map((account) => account.id));
+    } catch {
+      // A batch-level failure is surfaced per-card through the store.
     }
   };
 

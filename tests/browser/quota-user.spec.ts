@@ -5,7 +5,8 @@
  *  - 21+ accounts → paginated (20/page), pagination controls work;
  *  - provider tabs filter the list and reset to page 1;
  *  - sort modes ("default" vs "soonest") reorder accounts with quota loaded;
- *  - "query all" batches the CURRENT PAGE only (≤20 accounts per batch);
+ *  - "query all" queries the CURRENT PAGE only (one ≤20 batch, never the
+ *    whole list — specification §7.1);
  *  - a single failing card does not abort the rest of its batch;
  *  - DOM secrecy: fixture identity secrets never appear in the user DOM;
  *  - the user artifact carries no reset capability (no reset buttons);
@@ -162,28 +163,56 @@ test.describe('user page: current-page batch', () => {
     // 20 cards succeed (all fixtures answer 200).
     await expect(page.locator('.card[data-state="success"]')).toHaveCount(20, { timeout: 20_000 });
 
-    // "Query all" walks the WHOLE visible account list in page-sized chunks
-    // (max 20 per batch — actions.queryCurrentPage rejects >20). With 25
-    // accounts: chunk 1 = the first 20 claude accounts, chunk 2 = the
-    // remaining claude + the four other providers.
+    // Specification §7.1: "查询全部额度" queries ONLY the current page (≤20
+    // accounts) — one actions.queryCurrentPage batch, never the whole list.
+    // The account set is 21 claude + 4 non-claude = 25 accounts over 2 pages,
+    // and page 1 is the first 20 claude accounts, so the exact expected
+    // traffic is 20 usage + 20 profile calls and NOTHING else.
     const claudeUsageCalls = session.apiCalls.filter((call) => call.url.endsWith('/api/oauth/usage'));
-    expect(claudeUsageCalls).toHaveLength(21); // every claude account, both pages
+    expect(claudeUsageCalls).toHaveLength(20); // exactly page 1
 
     // Per-account claude traffic is exactly usage + profile.
     const claudeProfileCalls = session.apiCalls.filter((call) => call.url.endsWith('/api/oauth/profile'));
-    expect(claudeProfileCalls).toHaveLength(21);
+    expect(claudeProfileCalls).toHaveLength(20);
 
-    // Non-claude providers were queried exactly once each in the second chunk.
+    // Page-1 accounts are claude only: no non-claude provider was touched.
+    expect(session.apiCalls.filter((call) => call.url.includes('chatgpt.com/backend-api/wham/usage'))).toHaveLength(0);
+    expect(session.apiCalls.filter((call) => call.url.includes('api.kimi.com'))).toHaveLength(0);
+    expect(session.apiCalls.filter((call) => call.url.includes('grok.com/v1/billing?format=credits'))).toHaveLength(0);
+
+    // The batch is exactly the first 20 claude accounts (authIndex 0-19).
+    const usageIndexes = claudeUsageCalls.map((call) => Number(call.authIndex));
+    expect(usageIndexes.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 20 }, (_, i) => i));
+
+    // Let any stray second-batch regression surface before asserting totals.
+    await page.waitForTimeout(500);
+    expect(session.apiCalls.length).toBe(40);
+
+    // Stats bar reports 20 successes of 25 accounts (page 1 only).
+    await expect(page.locator('[data-role="stats"]')).toContainText('成功20');
+    expect(errors).toEqual([]);
+  });
+
+  test('after paging, query-all re-targets the new current page', async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    const accounts = [...manyClaudeAccounts(21), ...CANONICAL_ACCOUNTS.filter((a) => a.provider !== 'claude')];
+    const session = createRouteSession({ accounts });
+    await installRoutes(page, session);
+    await openPage(page, '/quota.html', session);
+    await expect(page.locator('.card').first()).toBeVisible({ timeout: 10_000 });
+
+    // Page 2 = the last claude account + the four non-claude providers.
+    await page.locator('[data-action="page-next"]').click();
+    await page.locator('[data-action="query-all"]').click();
+
+    await expect(page.locator('.card[data-state="success"]')).toHaveCount(5, { timeout: 20_000 });
+    const claudeUsageCalls = session.apiCalls.filter((call) => call.url.endsWith('/api/oauth/usage'));
+    expect(claudeUsageCalls).toHaveLength(1); // claude-bulk-20 only
+    expect(Number(claudeUsageCalls[0].authIndex)).toBe(20);
+    // Each non-claude provider on page 2 was queried exactly once.
     expect(session.apiCalls.filter((call) => call.url.includes('chatgpt.com/backend-api/wham/usage'))).toHaveLength(1);
     expect(session.apiCalls.filter((call) => call.url.includes('api.kimi.com'))).toHaveLength(1);
     expect(session.apiCalls.filter((call) => call.url.includes('grok.com/v1/billing?format=credits'))).toHaveLength(1);
-
-    // Chunking: the first 20 usage calls are the page-1 accounts (index 0-19).
-    const usageIndexes = claudeUsageCalls.map((call) => Number(call.authIndex));
-    expect(usageIndexes.length).toBe(21);
-
-    // Stats bar reports 25 successes out of 25 accounts once every chunk lands.
-    await expect(page.locator('[data-role="stats"]')).toContainText('成功25', { timeout: 20_000 });
     expect(errors).toEqual([]);
   });
 

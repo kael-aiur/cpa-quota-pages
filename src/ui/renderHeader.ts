@@ -50,10 +50,10 @@ export function renderHeader(options: HeaderOptions): HTMLElement {
 
   const queryAll = h('button', {
     class: 'btn btn-primary',
-    attrs: { type: 'button', title: '查询全部账号额度', 'data-action': 'query-all' },
+    attrs: { type: 'button', title: '查询当前页账号额度（最多 20 个）', 'data-action': 'query-all' },
   });
   queryAll.append(refreshIcon());
-  queryAll.append(h('span', { class: 'btnLabel', text: '查询全部额度' }));
+  queryAll.append(h('span', { class: 'btnLabel', text: '查询当前页额度' }));
   queryAll.addEventListener('click', () => options.handlers.onQueryAll());
   actions.append(queryAll);
 

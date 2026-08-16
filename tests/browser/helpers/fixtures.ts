@@ -23,8 +23,7 @@ export const FIXTURE_SECRETS = {
   claudeEmail: 'claude-owner@secret-example.test',
   claudeFile: 'claude-main.secret.json',
   codexFile: 'codex-team.secret.json',
-  codexAccount: 'acct-codex-secret-001',
-  adminEmail: 'root@secret-example.test',
+  codexEmail: 'codex-team@secret-example.test',
 } as const;
 
 export const USER_AUTH_RESPONSE = {
@@ -147,7 +146,7 @@ export interface FixtureAccount {
 export const CANONICAL_ACCOUNTS: FixtureAccount[] = [
   { name: FIXTURE_SECRETS.claudeFile, provider: 'claude', authIndex: 0, email: FIXTURE_SECRETS.claudeEmail, resets: { sessionMs: 2 * 3600_000, weeklyMs: 4 * 24 * 3600_000 } },
   { name: 'antigravity-main.json', provider: 'antigravity', authIndex: 1, projectId: 'ag-project-77' },
-  { name: FIXTURE_SECRETS.codexFile, provider: 'codex', authIndex: 2, email: 'codex-team@secret-example.test', resets: { sessionMs: 3 * 3600_000, weeklyMs: 5 * 24 * 3600_000 } },
+  { name: FIXTURE_SECRETS.codexFile, provider: 'codex', authIndex: 2, email: FIXTURE_SECRETS.codexEmail, resets: { sessionMs: 3 * 3600_000, weeklyMs: 5 * 24 * 3600_000 } },
   { name: 'xai-weekly.json', provider: 'x-ai', authIndex: 3 },
   { name: 'kimi-pro.json', provider: 'kimi', authIndex: 4, resets: { sessionMs: 45 * 60_000, dailyMs: 6 * 24 * 3600_000 } },
 ];

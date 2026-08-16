@@ -257,24 +257,21 @@ describe('createQuotaApp orchestration', () => {
     app.destroy();
   });
 
-  it('queries every visible account in batches of at most the page size (max 20)', async () => {
-    // 25 accounts at pageSize 5 force FIVE serialized batches. 25 > 20 (the
-    // MAX_BATCH_SIZE a non-chunked implementation would overflow), so a
-    // regression back to "pass every visible id in one call" throws a
-    // RangeError, never marks a card loading and surfaces no success — caught
-    // by BOTH the direct batch observation and the apiCall count below.
-    // Per-publish cost stays as cheap as the deflaked version: derivePage
-    // renders ONLY the current page (5 cards, never 25), and that rendered
-    // card count is what dominates this test under parallel-worker CPU
-    // starvation. The hard >20 RangeError cap itself is covered in
-    // tests/app/actions.test.ts.
+  it('query-all queries only the current page: one batch of at most the page size (max 20)', async () => {
+    // Specification §7.1: “查询全部额度”只查询当前页，最多 20 个认证账号.
+    // 25 accounts at pageSize 5 => the current page is the FIRST FIVE; a
+    // single actions.queryCurrentPage batch of exactly those five ids must be
+    // the whole query-all traffic. A regression back to iterate-all-visible
+    // issues 25 apiCalls across five batches and fails every assertion below;
+    // a regression to "pass every visible id in one call" additionally throws
+    // the >20 RangeError inside actions.queryCurrentPage (hard cap covered in
+    // tests/app/actions.test.ts).
     //
     // Direct batch observation (injected store): every ACCEPTED beginBatch is
     // exactly one actions.queryCurrentPage call that passed its guards, and
-    // the loading marks inside that epoch are exactly the chunk's accounts
+    // the loading marks inside that epoch are exactly that batch's accounts
     // (loading marks are published before the batch's apiCalls, so a complete
-    // apiCall count implies a complete batch log). => chunking is asserted
-    // independently of the >20 cap.
+    // apiCall count implies a complete batch log).
     const files = Array.from({ length: 25 }, (_, i) => claudeFile(`c${i}.json`));
     const api = fakeApi(files);
     const calls: string[] = [];
@@ -301,15 +298,46 @@ describe('createQuotaApp orchestration', () => {
 
     root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
     await vi.waitFor(
-      () => expect(mockCount(api.apiCall)).toBe(25),
+      () => expect(mockCount(api.apiCall)).toBe(5),
       { timeout: 15000, interval: 50 },
     );
-    // Chunking observed directly: exactly ceil(25/5) batches, each no larger
-    // than the page size, together covering every visible account.
-    expect(batchSizes).toEqual([5, 5, 5, 5, 5]);
+    // Exactly ONE batch, sized exactly like the current page.
+    expect(batchSizes).toEqual([5]);
+    // ...and it queried the first five accounts only.
+    expect(calls).toEqual(['q:c0.json', 'q:c1.json', 'q:c2.json', 'q:c3.json', 'q:c4.json']);
+    // Settle, then confirm no further batch sneaks in for the other 20.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(batchSizes).toEqual([5]);
+    expect(mockCount(api.apiCall)).toBe(5);
     // No card should be in an error state from a RangeError batch overflow.
     const states = Array.from(root.querySelectorAll('.card')).map((c) => c.getAttribute('data-state'));
     expect(states).not.toContain('error');
+    app.destroy();
+  }, 30000);
+
+  it('query-all after pagination queries exactly the newly visible page', async () => {
+    // The current page is derived at click time: page 2 of 25 accounts at
+    // pageSize 5 is accounts 5..9, and query-all must re-target it after the
+    // page change (spec §7.1: current page only, never the whole list).
+    const files = Array.from({ length: 25 }, (_, i) => claudeFile(`c${i}.json`));
+    const api = fakeApi(files);
+    const calls: string[] = [];
+    const root = newRoot();
+    const app = await startApp({
+      root, mode: 'user', revealAccountIdentity: false, pageSize: 5,
+      session: fakeSession(), api, media: fakeMedia(), clock: fakeClock(),
+      providerQueries: { claude: claudeQuery(calls) },
+    });
+
+    root.querySelector<HTMLElement>('[data-action="page-next"]')!.click();
+    root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
+    await vi.waitFor(
+      () => expect(mockCount(api.apiCall)).toBe(5),
+      { timeout: 15000, interval: 50 },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(calls).toEqual(['q:c5.json', 'q:c6.json', 'q:c7.json', 'q:c8.json', 'q:c9.json']);
+    expect(mockCount(api.apiCall)).toBe(5);
     app.destroy();
   }, 30000);
 

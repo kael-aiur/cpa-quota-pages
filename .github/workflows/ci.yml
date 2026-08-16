@@ -48,13 +48,36 @@ jobs:
 
       - name: User artifact must not consume reset credits
         run: |
-          ! grep -F '/rate-limit-reset-credits/consume' dist/quota.html
-          grep -F '/rate-limit-reset-credits/consume' dist/quota-admin.html
-          ! grep -F '/assets/' dist/quota.html
-          ! grep -F '/assets/' dist/quota-admin.html
+          # Each check is a separate `if grep; then fail` block: a multi-line
+          # `run:` under `bash -e` exempts `!`-prefixed pipelines from errexit
+          # and only the LAST line decides the step status, so the old
+          # `! grep ...` list could mask every violation above the last line.
+          if grep -qF '/rate-limit-reset-credits/consume' dist/quota.html; then
+            echo 'violated: dist/quota.html must not contain the reset-credit consume endpoint'
+            exit 1
+          fi
+          if ! grep -qF '/rate-limit-reset-credits/consume' dist/quota-admin.html; then
+            echo 'violated: dist/quota-admin.html must contain the reset-credit consume endpoint (admin reset capability missing)'
+            exit 1
+          fi
+          if grep -qF '/assets/' dist/quota.html; then
+            echo 'violated: dist/quota.html must not reference /assets/ (single-file artifact)'
+            exit 1
+          fi
+          if grep -qF '/assets/' dist/quota-admin.html; then
+            echo 'violated: dist/quota-admin.html must not reference /assets/ (single-file artifact)'
+            exit 1
+          fi
 
       - name: Committed dist matches a clean rebuild of the sources
         run: |
-          git add -A dist
+          # The Build step above re-stamped dist with GITHUB_SHA (= HEAD), so
+          # restore the COMMITTED dist before checking. `git checkout -- dist`
+          # resets both the worktree and the index to HEAD for dist/, leaving
+          # check:dist's `git diff --exit-code -- dist` comparisons (worktree
+          # vs index vs HEAD) coherent. Staging the rebuilt dist into the index
+          # instead would poison that comparison — the index would hold the
+          # rebuilt bytes while the worktree gets normalized against them, a
+          # guaranteed mismatch.
+          git checkout -- dist
           npm run check:dist
-          git diff --exit-code -- dist

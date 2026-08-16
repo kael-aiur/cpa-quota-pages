@@ -263,5 +263,9 @@ describe('renderApp authenticated shell', () => {
     expect(h.onPageChange).toHaveBeenCalledWith(2);
     expect(h.onSelectProvider).toHaveBeenCalledWith('claude');
     expect(h.onQueryOne).toHaveBeenCalledWith('a');
+
+    // Spec §7.1: the header button must describe CURRENT-PAGE semantics, so
+    // the label can never drift back to "查询全部额度" while querying one page.
+    expect(root.querySelector<HTMLElement>('[data-action="query-all"]')!.textContent).toContain('查询当前页额度');
   });
 });
