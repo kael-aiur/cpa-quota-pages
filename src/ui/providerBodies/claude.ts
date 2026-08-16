@@ -24,7 +24,7 @@ function metaValue(label: string, value: string): HTMLElement {
   });
 }
 
-export function buildClaudeBody(data: ClaudeQuotaData, nowMs: number): HTMLElement {
+export function buildClaudeBody(data: ClaudeQuotaData, nowMs: number, urgentWindowId: string | null = null): HTMLElement {
   const body = h('div', { class: 'providerBody', data: { provider: 'claude' } });
 
   const planItems: HTMLElement[] = [];
@@ -59,7 +59,7 @@ export function buildClaudeBody(data: ClaudeQuotaData, nowMs: number): HTMLEleme
       label: textOf(window.label) || 'Claude',
       remainingPercent: window.remainingPercent,
       resetAtMs: window.resetAtMs,
-    }, nowMs));
+    }, nowMs, window.id === urgentWindowId));
   }
   return body;
 }

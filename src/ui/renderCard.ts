@@ -18,6 +18,12 @@ export interface RenderOptions {
   anonymousLabel: string;
   /** Snapshot time for reset formatting; defaults to Date.now(). */
   nowMs?: number;
+  /**
+   * Spec §7.1 urgent emphasis: account id → the id of the card's earliest
+   * recovering window/credit strictly < 1h away. That meter row gets the
+   * emphasis class + a text badge (never color alone).
+   */
+  urgentWindowIds?: ReadonlyMap<string, string>;
 }
 
 export interface CardHandlers {
@@ -67,6 +73,7 @@ function renderQuotaRegion(
   entry: AccountEntry,
   quota: QuotaLoadState,
   nowMs: number,
+  urgentWindowId: string | null,
 ): HTMLElement {
   const region = h('div', { class: 'quotaSection', data: { role: 'quota' } });
 
@@ -93,7 +100,7 @@ function renderQuotaRegion(
       }));
       break;
     case 'success':
-      region.append(renderProviderBody(entry.provider, quota.data, nowMs));
+      region.append(renderProviderBody(entry.provider, quota.data, nowMs, urgentWindowId));
       break;
   }
   return region;
@@ -130,7 +137,7 @@ export function renderQuotaCard(
     if (meta) card.append(meta);
   }
 
-  card.append(renderQuotaRegion(entry, quota, nowMs));
+  card.append(renderQuotaRegion(entry, quota, nowMs, options.urgentWindowIds?.get(entry.id) ?? null));
 
   const actions = h('div', { class: 'cardActions' });
 

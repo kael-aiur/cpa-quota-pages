@@ -12,7 +12,7 @@ function metaValue(label: string, value: string): HTMLElement {
   });
 }
 
-export function buildKimiBody(data: KimiQuotaData, nowMs: number): HTMLElement {
+export function buildKimiBody(data: KimiQuotaData, nowMs: number, urgentWindowId: string | null = null): HTMLElement {
   const body = h('div', { class: 'providerBody', data: { provider: 'kimi' } });
 
   if (data.windows.length === 0) {
@@ -26,7 +26,7 @@ export function buildKimiBody(data: KimiQuotaData, nowMs: number): HTMLElement {
       label: textOf(window.label) || 'Kimi',
       remainingPercent: window.remainingPercent,
       resetAtMs: window.resetAtMs,
-    }, nowMs));
+    }, nowMs, window.id === urgentWindowId));
 
     const limit = window.limit;
     const used = window.used;

@@ -27,7 +27,7 @@ function metaValue(label: string, value: string): HTMLElement {
   });
 }
 
-export function buildCodexBody(data: CodexQuotaData, nowMs: number): HTMLElement {
+export function buildCodexBody(data: CodexQuotaData, nowMs: number, urgentWindowId: string | null = null): HTMLElement {
   const body = h('div', { class: 'providerBody', data: { provider: 'codex' } });
 
   // Identity (accountId) is intentionally not rendered here — the card header
@@ -66,7 +66,7 @@ export function buildCodexBody(data: CodexQuotaData, nowMs: number): HTMLElement
       label: textOf(window.label) || 'Codex',
       remainingPercent: window.remainingPercent,
       resetAtMs: window.resetAtMs,
-    }, nowMs));
+    }, nowMs, window.id === urgentWindowId));
   }
   return body;
 }

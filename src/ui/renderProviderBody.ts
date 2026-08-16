@@ -36,14 +36,14 @@ export interface MeterInput {
   resetAtMs: number | null;
 }
 
-export function renderMeter(input: MeterInput, nowMs: number): HTMLElement {
+export function renderMeter(input: MeterInput, nowMs: number, urgent = false): HTMLElement {
   const remaining = clampPercent(input.remainingPercent);
   const tier: QuotaTier = remainingTier(remaining);
   const known = remaining !== null;
   const percentText = known ? `剩余 ${Math.round(remaining)}%` : '剩余 --';
   const valueText = known
-    ? `剩余 ${Math.round(remaining)}%，${TIER_LABEL[tier]}`
-    : `剩余未知，${TIER_LABEL[tier]}`;
+    ? `剩余 ${Math.round(remaining)}%，${TIER_LABEL[tier]}${urgent ? '，即将恢复' : ''}`
+    : `剩余未知，${TIER_LABEL[tier]}${urgent ? '，即将恢复' : ''}`;
 
   const fill = h('div', { class: `quotaBarFill ${tier}` });
   if (known) fill.style.width = `${Math.round(remaining * 100) / 100}%`;
@@ -72,14 +72,20 @@ export function renderMeter(input: MeterInput, nowMs: number): HTMLElement {
     status,
     h('span', { class: 'quotaPercent', text: percentText }),
   ];
+  // Spec §7.1 urgent emphasis: the TEXT badge is the primary channel (the
+  // emphasis class only reinforces it) so urgency is never color-alone.
+  if (urgent) {
+    metaChildren.push(h('span', { class: 'urgentBadge', text: '即将恢复' }));
+  }
   if (input.resetAtMs !== null && Number.isFinite(input.resetAtMs)) {
     const resetText = formatResetLabel(input.resetAtMs, nowMs);
     metaChildren.push(h('span', { class: 'quotaReset', text: resetText, title: resetText }));
   }
 
   return h('div', {
-    class: 'quotaRow',
+    class: urgent ? 'quotaRow urgent' : 'quotaRow',
     data: { windowId: input.id, tier },
+    ...(urgent ? { aria: { label: '即将恢复' } } : {}),
     children: [
       h('div', {
         class: 'quotaRowHeader',
@@ -102,17 +108,18 @@ export function renderProviderBody(
   provider: Provider,
   data: ProviderQuotaResult,
   nowMs: number,
+  urgentWindowId: string | null = null,
 ): HTMLElement {
   switch (provider) {
     case 'claude':
-      return buildClaudeBody(data as ClaudeQuotaData, nowMs);
+      return buildClaudeBody(data as ClaudeQuotaData, nowMs, urgentWindowId);
     case 'antigravity':
-      return buildAntigravityBody(data as AntigravityQuotaData, nowMs);
+      return buildAntigravityBody(data as AntigravityQuotaData, nowMs, urgentWindowId);
     case 'codex':
-      return buildCodexBody(data as CodexQuotaData, nowMs);
+      return buildCodexBody(data as CodexQuotaData, nowMs, urgentWindowId);
     case 'kimi':
-      return buildKimiBody(data as KimiQuotaData, nowMs);
+      return buildKimiBody(data as KimiQuotaData, nowMs, urgentWindowId);
     case 'xai':
-      return buildXaiBody(data as XaiQuotaData, nowMs);
+      return buildXaiBody(data as XaiQuotaData, nowMs, urgentWindowId);
   }
 }

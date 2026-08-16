@@ -20,7 +20,7 @@ function metaValue(label: string, value: string): HTMLElement {
   });
 }
 
-export function buildAntigravityBody(data: AntigravityQuotaData, nowMs: number): HTMLElement {
+export function buildAntigravityBody(data: AntigravityQuotaData, nowMs: number, urgentWindowId: string | null = null): HTMLElement {
   const body = h('div', { class: 'providerBody', data: { provider: 'antigravity' } });
 
   const planItems: HTMLElement[] = [];
@@ -50,7 +50,7 @@ export function buildAntigravityBody(data: AntigravityQuotaData, nowMs: number):
         label: textOf(bucket.label) || bucket.id,
         remainingPercent: remaining,
         resetAtMs: bucket.resetAtMs,
-      }, nowMs));
+      }, nowMs, bucket.id === urgentWindowId));
     }
   }
   return body;

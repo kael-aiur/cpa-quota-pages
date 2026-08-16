@@ -16,6 +16,7 @@
 
 import type { AppState, QuotaLoadState } from '../app/state';
 import { paginate, sortAccounts } from '../quota/logic';
+import { nextRecoveryMs, urgentRecoveryId } from '../quota/resetSchedule';
 import type { AccountEntry, SortMode } from '../quota/types';
 import {
   buildTimelineLane,
@@ -82,14 +83,16 @@ export function initialUiState(): QuotaUiState {
   return { selectedProvider: 'all', sortMode: 'default', currentPage: 1, timelineMode: 'weekly', timelineOffset: 0 };
 }
 
-function recoveryAt(state: Readonly<AppState>, entry: AccountEntry): number | null {
+/**
+ * Soonest-recovery sort key (spec §9), delegated to the canonical recovery
+ * schedule: Antigravity buckets, xAI weekly billing and Codex available reset
+ * credits all count; past/invalid instants are excluded; unloaded, failed or
+ * window-less accounts sink with `null`, preserving their default order.
+ */
+function recoveryAt(state: Readonly<AppState>, entry: AccountEntry, nowMs: number): number | null {
   const quota = state.quotaCache.get(entry.id);
   if (!quota || quota.status !== 'success') return null;
-  const data = quota.data as { windows?: Array<{ resetAtMs?: unknown }> };
-  const resets = (data.windows ?? [])
-    .map((window) => window.resetAtMs)
-    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-  return resets.length ? Math.min(...resets) : null;
+  return nextRecoveryMs(entry.provider, quota.data, nowMs);
 }
 
 /** Accounts after applying the provider filter (preserves canonical classification order). */
@@ -104,9 +107,10 @@ export function derivePage(
   state: Readonly<AppState>,
   ui: QuotaUiState,
   pageSize: number,
+  nowMs: number,
 ): { items: AccountEntry[]; page: number; totalPages: number; totalItems: number } {
   const visible = deriveVisibleAccounts(state, ui);
-  const sorted = sortAccounts(visible, ui.sortMode, (entry) => recoveryAt(state, entry));
+  const sorted = sortAccounts(visible, ui.sortMode, (entry) => recoveryAt(state, entry, nowMs));
   const paged = paginate(sorted, ui.currentPage, pageSize);
   return { items: paged.items, page: paged.page, totalPages: paged.totalPages, totalItems: paged.totalItems };
 }
@@ -258,8 +262,19 @@ export function renderApp(options: RenderAppOptions): RenderAppHandle {
       },
     }));
 
-    const { items, page, totalPages } = derivePage(state, uiState, options.pageSize);
+    const { items, page, totalPages } = derivePage(state, uiState, options.pageSize, nowMs);
     root.append(buildStats(accounts, state));
+
+    // Spec §7.1 "一小时内最早恢复项强调": per card, the earliest recovering item
+    // strictly less than one hour away is marked urgent and its meter row gets
+    // a TEXT badge + emphasis class (never color alone).
+    const urgentWindowIds = new Map<string, string>();
+    for (const account of items) {
+      const quota = state.quotaCache.get(account.id);
+      if (quota?.status !== 'success') continue;
+      const urgentId = urgentRecoveryId(account.provider, quota.data, nowMs);
+      if (urgentId !== null) urgentWindowIds.set(account.id, urgentId);
+    }
 
     const grid = h('div', { class: 'cardsGrid' });
     const cardOptions: RenderOptions = {
@@ -268,6 +283,7 @@ export function renderApp(options: RenderAppOptions): RenderAppHandle {
       resetAction: options.resetAction,
       anonymousLabel: '',
       nowMs,
+      ...(urgentWindowIds.size > 0 ? { urgentWindowIds } : {}),
     };
     const cardHandlers: CardHandlers = {
       onQuery: (accountId) => handlers.onQueryOne(accountId),

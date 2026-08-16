@@ -146,7 +146,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     // derivePage applies the same sort + clamp the view renders, so this is
     // exactly the account set the user sees; pageSize is capped at 20 by the
     // entries, which keeps actions.queryCurrentPage (hard cap 20) satisfied.
-    const page = derivePage(store.getState(), uiState, pageSize);
+    const page = derivePage(store.getState(), uiState, pageSize, clock.getSnapshot());
     try {
       await actions.queryCurrentPage(page.items.map((account) => account.id));
     } catch {

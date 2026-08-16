@@ -139,7 +139,7 @@ export interface FixtureAccount {
   email?: string;
   projectId?: string;
   /** Deterministic reset offsets, only used by the per-URL mock builder. */
-  resets?: { sessionMs: number; weeklyMs?: number; dailyMs?: number };
+  resets?: { sessionMs?: number; weeklyMs?: number; dailyMs?: number };
 }
 
 /** The canonical small account set (one per provider, secrets included). */

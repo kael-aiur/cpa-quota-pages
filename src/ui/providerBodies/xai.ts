@@ -23,7 +23,7 @@ function cents(value: number | null): string | null {
   return `$${(value / 100).toFixed(2)}`;
 }
 
-export function buildXaiBody(data: XaiQuotaData, nowMs: number): HTMLElement {
+export function buildXaiBody(data: XaiQuotaData, nowMs: number, urgentWindowId: string | null = null): HTMLElement {
   const body = h('div', { class: 'providerBody', data: { provider: 'xai' } });
 
   const billing = data.billing;
@@ -68,7 +68,7 @@ export function buildXaiBody(data: XaiQuotaData, nowMs: number): HTMLElement {
       label: textOf(window.label) || 'xAI',
       remainingPercent: window.remainingPercent,
       resetAtMs: window.resetAtMs,
-    }, nowMs));
+    }, nowMs, window.id === urgentWindowId));
   }
   return body;
 }

@@ -14,7 +14,7 @@
  */
 
 import { expect, test } from '@playwright/test';
-import { CANONICAL_ACCOUNTS, FIXTURE_SECRETS, manyClaudeAccounts } from './helpers/fixtures';
+import { CANONICAL_ACCOUNTS, FIXTURE_SECRETS, manyClaudeAccounts, type FixtureAccount } from './helpers/fixtures';
 import { createRouteSession, installRoutes, openPage } from './helpers/routes';
 
 /** Collect console errors + page errors into a live array (synchronous). */
@@ -258,6 +258,61 @@ test.describe('user page: current-page batch', () => {
     await expect(page.locator('.card')).toHaveCount(CANONICAL_ACCOUNTS.length);
     await page.waitForTimeout(300);
     expect(session.apiCalls.length).toBe(apiCallsBefore);
+  });
+});
+
+test.describe('user page: soonest sort across providers', () => {
+  test('soonest sort lifts an xAI weekly billing reset above claude windows (spec §9)', async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    // Claude recovers its session window at +2h; the xAI account's WEEKLY
+    // BILLING period (not a windows[] entry — billing.resetAtMs) ends at +1h.
+    // The canonical nextRecoveryMs must rank xAI first; the old ad-hoc
+    // windows-only Math.min sank xAI entirely.
+    const accounts: FixtureAccount[] = [
+      { ...CANONICAL_ACCOUNTS[0], resets: { sessionMs: 2 * 3600_000, weeklyMs: 4 * 24 * 3600_000 } },
+      { ...CANONICAL_ACCOUNTS[3], resets: { weeklyMs: 1 * 3600_000 } },
+    ];
+    const session = createRouteSession({ accounts });
+    await installRoutes(page, session);
+    await openPage(page, '/quota.html', session);
+    await expect(page.locator('.card').first()).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('[data-action="query-all"]').click();
+    await expect(page.locator('.card[data-state="success"]')).toHaveCount(2, { timeout: 20_000 });
+
+    // Default order is canonical (claude first); soonest must flip to xAI.
+    const defaultBadges = await page.locator('.card .typeBadge').allTextContents();
+    expect(defaultBadges).toEqual(['Claude', 'xAI']);
+
+    await page.locator('[data-sort="soonest"]').click();
+    await expect(page.locator('.sortTab[data-sort="soonest"]')).toHaveAttribute('aria-pressed', 'true');
+    const sortedBadges = await page.locator('.card .typeBadge').allTextContents();
+    expect(sortedBadges).toEqual(['xAI', 'Claude']);
+    expect(errors).toEqual([]);
+  });
+
+  test('badges the earliest sub-hour recovery with a text badge (spec §7.1)', async ({ page }) => {
+    const errors = collectConsoleErrors(page);
+    // Kimi's session window resets in 30 minutes (< 1h) — the earliest item on
+    // the card must carry the urgent text badge + emphasis class.
+    const accounts = [...CANONICAL_ACCOUNTS];
+    const session = createRouteSession({ accounts });
+    await installRoutes(page, session);
+    await openPage(page, '/quota.html', session);
+    await expect(page.locator('.card').first()).toBeVisible({ timeout: 10_000 });
+
+    await page.locator('[data-action="query-all"]').click();
+    await expect(page.locator('.card[data-state="success"]')).toHaveCount(CANONICAL_ACCOUNTS.length, { timeout: 20_000 });
+
+    // Kimi card: one meter row, urgent.
+    const kimiCard = page.locator('.card[data-provider="kimi"]');
+    await expect(kimiCard.locator('.quotaRow.urgent')).toHaveCount(1);
+    await expect(kimiCard.locator('.quotaRow.urgent .urgentBadge')).toHaveText('即将恢复');
+
+    // Claude's earliest reset is 2h away — no urgent row on that card.
+    const claudeCard = page.locator('.card[data-provider="claude"]');
+    await expect(claudeCard.locator('.quotaRow.urgent')).toHaveCount(0);
+    expect(errors).toEqual([]);
   });
 });
 

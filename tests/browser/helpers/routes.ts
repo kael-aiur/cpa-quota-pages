@@ -21,7 +21,6 @@ import {
   CODEX_CONSUME_RESPONSE,
   CODEX_RESET_CREDITS,
   FIXED_NOW,
-  XAI_WEEKLY_BILLING,
   claudeUsage,
   codexUsage,
   kimiUsage,
@@ -102,18 +101,34 @@ export function createRouteSession(options: RouteOptions = {}): RouteSession {
 }
 
 function claudeBodyFor(account: FixtureAccount): unknown {
-  const resets = account.resets ?? { sessionMs: 2 * 3600_000, weeklyMs: 4 * 24 * 3600_000 };
-  return claudeUsage({ sessionMs: resets.sessionMs, weeklyMs: resets.weeklyMs ?? 4 * 24 * 3600_000 });
+  const resets = account.resets ?? {};
+  return claudeUsage({ sessionMs: resets.sessionMs ?? 2 * 3600_000, weeklyMs: resets.weeklyMs ?? 4 * 24 * 3600_000 });
 }
 
 function codexBodyFor(account: FixtureAccount): unknown {
-  const resets = account.resets ?? { sessionMs: 3 * 3600_000, weeklyMs: 5 * 24 * 3600_000 };
-  return codexUsage({ sessionMs: resets.sessionMs, weeklyMs: resets.weeklyMs ?? 5 * 24 * 3600_000 });
+  const resets = account.resets ?? {};
+  return codexUsage({ sessionMs: resets.sessionMs ?? 3 * 3600_000, weeklyMs: resets.weeklyMs ?? 5 * 24 * 3600_000 });
 }
 
 function kimiBodyFor(account: FixtureAccount): unknown {
-  const resets = account.resets ?? { sessionMs: 45 * 60_000, dailyMs: 6 * 24 * 3600_000 };
-  return kimiUsage({ sessionMs: resets.sessionMs, dailyMs: resets.dailyMs ?? resets.weeklyMs ?? 6 * 24 * 3600_000 });
+  const resets = account.resets ?? {};
+  return kimiUsage({ sessionMs: resets.sessionMs ?? 45 * 60_000, dailyMs: resets.dailyMs ?? resets.weeklyMs ?? 6 * 24 * 3600_000 });
+}
+
+/** xAI weekly billing summary; `weeklyMs` overrides the default reset offset. */
+function xaiWeeklyFor(account: FixtureAccount | undefined): unknown {
+  const weeklyMs = account?.resets?.weeklyMs ?? 4 * 24 * 3600_000;
+  return {
+    config: {
+      currentPeriod: {
+        type: 'weekly',
+        start: new Date(FIXED_NOW.getTime() - 3 * 24 * 3600_000).toISOString(),
+        end: new Date(FIXED_NOW.getTime() + weeklyMs).toISOString(),
+      },
+      creditUsagePercent: 25,
+      productUsage: [{ product: 'Grok', usagePercent: 20 }],
+    },
+  };
 }
 
 /** Serve the provider payload for an api-call body; null = unmapped URL. */
@@ -141,7 +156,7 @@ function providerPayloadFor(capture: CapturedApiCall, session: RouteSession): { 
       return { status: 200, body: { currentTier: 'tier_standard', tierId: 'tier_standard', cloudaicompanionProject: 'ag-project-77' } };
     case XAI_WEEKLY_URL:
       if (account && session.failures.has(account.name)) return { status: session.failures.get(account.name)!, body: { error: 'upstream failure' } };
-      return { status: 200, body: XAI_WEEKLY_BILLING };
+      return { status: 200, body: xaiWeeklyFor(account) };
     case XAI_MONTHLY_URL:
       return { status: 200, body: { config: { currentPeriod: { type: 'monthly', start: '2026-08-01T00:00:00Z', end: '2026-09-01T00:00:00Z' }, creditUsagePercent: 10 } } };
     case KIMI_USAGE_URL:
