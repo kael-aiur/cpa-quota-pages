@@ -125,6 +125,12 @@ Web Storage 或 Cookie。
   `Content-Security-Policy: frame-ancestors 'self'`（frame-ancestors 无法由
   meta CSP 生效，必须由 HTTP 头提供；若父 iframe 非同源，改为明确列出的
   Sub2API origin）。
+- **必须 `proxy_hide_header` GitHub raw 注入的安全头**（`Content-Security-Policy`、
+  `X-Frame-Options`、`X-Content-Type-Options`、`Strict-Transport-Security`、
+  `Cross-Origin-Resource-Policy`、`Access-Control-Allow-Origin`）：GitHub raw
+  对所有响应强制下发 `CSP: …; sandbox`（无 `allow-scripts`）和
+  `X-Frame-Options: deny`，直接代理成 HTML 文档会**禁止全部脚本执行**且
+  **无法 iframe 嵌入**——页面永远停在静态回退文案。不隐藏这些头，页面必坏。
 - `location /cpa/`：先 `auth_request /_sub2api_auth`，再
   `include /etc/nginx/secrets/cpa-management-auth.conf;` 注入 CPA management
   key，最后 `proxy_pass http://cpa_backend/;`。浏览器路径已含

@@ -185,6 +185,32 @@ describe('repository contract: nginx example', () => {
     }
   });
 
+  it('strips GitHub raw security headers that would sandbox the document', () => {
+    // raw.githubusercontent.com serves every file with
+    //   Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox
+    //   X-Frame-Options: deny
+    // The sandbox directive (without allow-scripts) disables all script execution,
+    // and X-Frame-Options: deny blocks iframe embedding outright. Proxied as an HTML
+    // document these break the page completely, so every GitHub-injected security
+    // header must be hidden before our own add_header set applies. This exact
+    // failure was observed live at https://llm.kael.site:8444/cpa/quota.html:
+    // "Blocked script execution ... because the document's frame is sandboxed and
+    // the 'allow-scripts' permission is not set".
+    for (const location of ['= /quota.html', '= /quota-admin.html']) {
+      const body = nginxLocationBody(nginxConf, location);
+      for (const header of [
+        'proxy_hide_header Content-Security-Policy;',
+        'proxy_hide_header X-Frame-Options;',
+        'proxy_hide_header X-Content-Type-Options;',
+        'proxy_hide_header Strict-Transport-Security;',
+        'proxy_hide_header Cross-Origin-Resource-Policy;',
+        'proxy_hide_header Access-Control-Allow-Origin;',
+      ]) {
+        expect(body).toContain(header);
+      }
+    }
+  });
+
   it('routes /cpa/ through auth_request, the secret include and a stripping proxy_pass', () => {
     const body = nginxLocationBody(nginxConf, '/cpa/');
     expect(body).toContain('auth_request /_sub2api_auth;');
