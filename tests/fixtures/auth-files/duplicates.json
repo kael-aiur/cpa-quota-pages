@@ -1,0 +1,35 @@
+[
+  {
+    "name": "z-runtime.json",
+    "provider": "claude",
+    "runtime_only": true
+  },
+  {
+    "name": "a-unavailable.json",
+    "provider": "codex",
+    "unavailable": true
+  },
+  {
+    "name": "duplicate.json",
+    "source": "memory",
+    "email": "fallback@example.com",
+    "provider": "claude",
+    "metadata": { "account": "fallback" }
+  },
+  {
+    "name": "duplicate.json",
+    "source": "file",
+    "path": "/auth/duplicate.json",
+    "email": "",
+    "provider": "claude",
+    "updated_at": "2026-08-12T12:00:00.000Z",
+    "runtime_only": false
+  },
+  {
+    "name": "duplicate.json",
+    "source": "memory",
+    "email": "stale@example.com",
+    "provider": "wrong-provider",
+    "attributes": { "region": "us" }
+  }
+]

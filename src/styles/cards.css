@@ -1,0 +1,423 @@
+/* ============================================================
+ * Cards, quota meters, and provider bodies.
+ *
+ * Meter status is carried by a text label + percent + a colored
+ * mark (the bar fill and the dot). The status word and percent
+ * always wear text tokens — never the status color — so the meter
+ * never relies on color alone (dataviz status rule). Tiers:
+ * remaining >= 70% green / >= 30% amber / < 30% red / unknown empty.
+ * ============================================================ */
+
+.card {
+  background-color: var(--bg-primary);
+  background-image: var(--card-gradient);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+  border-color: rgba(124, 108, 220, 0.35);
+}
+
+/* ---------------- Card header ---------------- */
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+
+.typeBadge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background-color: var(--badge-bg);
+  color: var(--badge-text);
+  border: 1px solid var(--badge-border);
+}
+
+.fileName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.cardMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.cardMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cardMetaRow .label {
+  color: var(--text-tertiary);
+}
+
+.cardMetaRow .value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ---------------- Quota section ---------------- */
+.quotaSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border-color);
+  margin-top: 2px;
+}
+
+.planRow {
+  display: flex;
+  align-items: center;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.planItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.planLabel {
+  color: var(--text-tertiary);
+}
+
+.planValue {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ---------------- Meter row ---------------- */
+.quotaRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.quotaRowHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.quotaModel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quotaMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* Status word wears a TEXT token; the dot beside it carries the color. */
+.quotaStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quotaStatusLabel {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.quotaDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  background-color: var(--text-tertiary);
+}
+.quotaDot.high { background-color: var(--success-color); }
+.quotaDot.medium { background-color: var(--quota-medium-color); }
+.quotaDot.low { background-color: var(--danger-color); }
+.quotaDot.unknown { background-color: transparent; border: 1px solid var(--text-tertiary); }
+
+.quotaPercent {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.quotaReset {
+  color: var(--text-tertiary);
+}
+
+/* ---------------- Urgent recovery emphasis (spec §7.1) ---------------- */
+/* The earliest item recovering in strictly < 1h. The urgentBadge TEXT is the
+   primary channel; these styles only reinforce it — urgency is never carried
+   by color alone. All text wears badge/text tokens (never a status color). */
+.quotaRow.urgent .quotaModel {
+  color: var(--badge-text);
+}
+
+.urgentBadge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  background-color: var(--badge-bg);
+  color: var(--badge-text);
+  border: 1px solid var(--badge-border);
+}
+
+/* The progressbar track + fill. The fill color is the status mark. */
+.quotaBar {
+  height: 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.quotaBarFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.quotaBarFill.high { background-color: var(--success-color); }
+.quotaBarFill.medium { background-color: var(--quota-medium-color); }
+.quotaBarFill.low { background-color: var(--danger-color); }
+.quotaBarFill.unknown { background-color: transparent; }
+
+.quotaMessage {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: 6px 0;
+}
+
+.quotaNotice {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.quotaError {
+  font-size: 12px;
+  color: var(--danger-color);
+  background-color: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  word-break: break-word;
+}
+
+.quotaGroupLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.quotaFigures {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+/* ---------------- Provider extras ---------------- */
+.providerBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.productList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.productItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.productName {
+  color: var(--text-secondary);
+}
+
+.productPercent {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* ---------------- Loading skeleton ---------------- */
+.skeleton {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--bg-tertiary);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--text-tertiary) 22%, transparent),
+    transparent
+  );
+  animation: shimmer 1.3s infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------------- Card actions / buttons ---------------- */
+.cardActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 2px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  height: 38px;
+  white-space: nowrap;
+  font-family: inherit;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--primary-contrast);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.btn-sm {
+  padding: 6px 12px;
+  height: 30px;
+  font-size: 12px;
+}
+
+.btn svg,
+.tab svg,
+.pageTitle svg,
+.modeBadge svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.themeToggle .moon {
+  display: none;
+}
+[data-theme='dark'] .themeToggle .sun {
+  display: none;
+}
+[data-theme='dark'] .themeToggle .moon {
+  display: inline;
+}
+
+/* ---------------- Reduced motion ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .card:hover {
+    transform: none;
+  }
+}

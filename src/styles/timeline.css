@@ -1,0 +1,480 @@
+/* ============================================================
+ * Recovery timeline (Weekly / Session).
+ *
+ * Color jobs are strictly separated (dataviz non-negotiables):
+ *  - PROVIDER IDENTITY is categorical, fixed order keyed by provider,
+ *    never cycled. It appears ONLY on the small dot beside the lane
+ *    label — all text wears text tokens, never a series color.
+ *  - PAST / LIVE / UPCOMING are STATUS: each carries a state class,
+ *    a distinct shape/texture treatment, AND a text label — never
+ *    color alone. The legend repeats the same shape + word.
+ *  - Only `.timelineTrackScroll` scrolls horizontally; the page never
+ *    overflows, even at 420px (the label column stays pinned).
+ * Light and dark are each hand-stepped (not an automatic flip).
+ * ============================================================ */
+
+.timeline {
+  /* Categorical provider identity — fixed order, validated adjacent set
+     (worst adjacent CVD ΔE 9.1 light / 8.4 dark). Light-mode slots 3/4/5
+     sit below 3:1 on the surface; every dot is paired with its text
+     label, which is the relief channel. */
+  --tl-cat-claude: #2a78d6;
+  --tl-cat-antigravity: #eb6834;
+  --tl-cat-codex: #1baf7a;
+  --tl-cat-xai: #eda100;
+  --tl-cat-kimi: #e87ba4;
+
+  --tl-lane-height: 34px;
+  --tl-lane-gap: 8px;
+
+  --tl-window-height: 18px;
+
+  --tl-past-bg: var(--bg-tertiary);
+  --tl-past-border: var(--border-color);
+  --tl-past-fg: var(--text-tertiary);
+
+  --tl-live-bg: var(--primary-color);
+  --tl-live-fg: var(--primary-contrast);
+
+  --tl-upcoming-bg: transparent;
+  --tl-upcoming-border: var(--border-hover);
+
+  --tl-now-color: var(--primary-color);
+  --tl-credit-color: var(--quota-medium-color);
+
+  --tl-track-bg: var(--bg-primary);
+  --tl-grid: var(--border-color);
+
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  min-width: 0;
+}
+
+[data-theme='dark'] .timeline {
+  --tl-cat-claude: #3987e5;
+  --tl-cat-antigravity: #d95926;
+  --tl-cat-codex: #199e70;
+  --tl-cat-xai: #c98500;
+  --tl-cat-kimi: #d55181;
+}
+
+/* ---------------- Header: mode tabs + period controls ---------------- */
+.timelineHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.timelineModeTabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 999px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+.timelineModeTab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.timelineModeTab:hover {
+  color: var(--text-primary);
+}
+
+.timelineModeTab.is-active {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
+  color: var(--primary-contrast);
+}
+
+.timelineControls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timelineNav,
+.timelineToday {
+  appearance: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.timelineNav {
+  width: 32px;
+  padding: 0;
+}
+
+.timelineNav svg {
+  width: 16px;
+  height: 16px;
+}
+
+.timelineToday {
+  padding: 0 14px;
+}
+
+.timelineNav:hover:not(:disabled),
+.timelineToday:hover:not(:disabled) {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-hover);
+}
+
+.timelineNav:disabled,
+.timelineToday:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---------------- Viewport: pinned labels + scrollable plot ----------------
+   The viewport is a flex row. The label column never scrolls; only
+   `.timelineTrackScroll` scrolls horizontally, so the page itself cannot
+   overflow at narrow widths. */
+.timelineViewport {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--tl-track-bg);
+}
+
+.timelineLabelColumn {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 132px;
+  border-right: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+}
+
+.timelineLaneLabel {
+  height: var(--tl-lane-height);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--tl-grid);
+}
+
+.timelineLabelColumn .timelineLaneLabel:last-child {
+  border-bottom: none;
+}
+
+.timelineProviderDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+/* Fixed categorical mapping: provider → slot. Never re-derived from rank. */
+.timelineProviderDot[data-provider='claude'] { background-color: var(--tl-cat-claude); }
+.timelineProviderDot[data-provider='antigravity'] { background-color: var(--tl-cat-antigravity); }
+.timelineProviderDot[data-provider='codex'] { background-color: var(--tl-cat-codex); }
+.timelineProviderDot[data-provider='xai'] { background-color: var(--tl-cat-xai); }
+.timelineProviderDot[data-provider='kimi'] { background-color: var(--tl-cat-kimi); }
+
+.timelineLaneName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+  word-break: break-all;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timelineTrackScroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  scrollbar-width: thin;
+}
+
+.timelineTrackArea {
+  position: relative;
+  /* Give the plot breathing room; at 420px the track scrolls instead of the page. */
+  min-width: 560px;
+  padding: 4px 0;
+}
+
+.timelineLaneTrack {
+  position: relative;
+  height: var(--tl-lane-height);
+  border-bottom: 1px solid var(--tl-grid);
+}
+
+.timelineTrackArea .timelineLaneTrack:last-child {
+  border-bottom: none;
+}
+
+/* ---------------- Now line ---------------- */
+.timelineNow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background-color: var(--tl-now-color);
+  opacity: 0.7;
+  z-index: 2;
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+/* ---------------- Window marks (STATUS) ----------------
+   past/live/upcoming each get a distinct fill AND texture; the legend
+   repeats the same shape, and every state has a text label. */
+.timelineWindow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: var(--tl-window-height);
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  min-width: 4px;
+  z-index: 1;
+  transition:
+    box-shadow 0.15s ease,
+    outline-offset 0.1s ease;
+}
+
+.timelineWindow:focus-visible {
+  outline: 2px solid var(--tl-now-color);
+  outline-offset: 2px;
+}
+
+.timelineWindow.is-past {
+  background-color: var(--tl-past-bg);
+  border: 1px solid var(--tl-past-border);
+  /* Texture: diagonal hatch so past never relies on the muted fill alone. */
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 3px,
+    color-mix(in srgb, var(--tl-past-fg) 30%, transparent) 3px,
+    color-mix(in srgb, var(--tl-past-fg) 30%, transparent) 4px
+  );
+}
+
+.timelineWindow.is-live {
+  background-color: var(--tl-live-bg);
+  border: 1px solid var(--tl-live-bg);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tl-live-bg) 28%, transparent);
+}
+
+.timelineWindow.is-upcoming {
+  background-color: var(--tl-upcoming-bg);
+  border: 1px dashed var(--tl-upcoming-border);
+}
+
+.timelineWindowLabel {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--tl-live-fg);
+  white-space: nowrap;
+  padding: 0 6px;
+  pointer-events: none;
+}
+
+/* ---------------- Codex credit-expiry tick ---------------- */
+.timelineCredit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  margin-left: -6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.timelineCredit:focus-visible {
+  outline: 2px solid var(--tl-credit-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.timelineCreditMark {
+  width: 3px;
+  height: 100%;
+  background-color: var(--tl-credit-color);
+  border-radius: 2px;
+}
+
+/* ---------------- Tooltip ---------------- */
+.timelineTooltip {
+  position: absolute;
+  top: 4px;
+  transform: translateX(-50%);
+  max-width: 260px;
+  padding: 6px 10px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  line-height: 1.4;
+  z-index: 5;
+  pointer-events: none;
+  white-space: normal;
+  word-break: break-word;
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.timelineTooltip[hidden] {
+  display: none;
+}
+
+/* ---------------- Legend ---------------- */
+.timelineLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 4px;
+}
+
+.timelineLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.timelineLegendSwatch {
+  width: 18px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.timelineLegendSwatch.is-past {
+  background-color: var(--tl-past-bg);
+  border: 1px solid var(--tl-past-border);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 3px,
+    color-mix(in srgb, var(--tl-past-fg) 30%, transparent) 3px,
+    color-mix(in srgb, var(--tl-past-fg) 30%, transparent) 4px
+  );
+}
+
+.timelineLegendSwatch.is-live {
+  background-color: var(--tl-live-bg);
+  border: 1px solid var(--tl-live-bg);
+}
+
+.timelineLegendSwatch.is-upcoming {
+  background-color: var(--tl-upcoming-bg);
+  border: 1px dashed var(--tl-upcoming-border);
+}
+
+.timelineLegendText {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* ---------------- Visually-hidden table equivalent ---------------- */
+.timelineSrOnly {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/*
+ * A <table> ignores width:1px under automatic table layout — its intrinsic
+ * content width wins, so the sr-only table would otherwise stretch to 500px+
+ * and create horizontal page overflow at narrow widths (the very thing the
+ * timeline's internal scroll region exists to prevent). force the shrink-to-
+ * fit algorithm and let the clipping do its job.
+ */
+table.timelineSrOnly {
+  table-layout: fixed;
+  max-width: 1px;
+}
+
+/* ---------------- Reduced motion ---------------- */
+@media (prefers-reduced-motion: reduce) {
+  .timelineModeTab,
+  .timelineNav,
+  .timelineToday,
+  .timelineWindow,
+  .timelineCredit,
+  .timelineTooltip {
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------------- Narrow viewport ---------------- */
+@media (max-width: 420px) {
+  .timeline {
+    padding: 12px;
+  }
+  .timelineLabelColumn {
+    width: 104px;
+  }
+  .timelineHeader {
+    align-items: stretch;
+  }
+}

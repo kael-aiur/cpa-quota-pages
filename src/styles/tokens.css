@@ -1,0 +1,109 @@
+/* ============================================================
+ * Design tokens — warm-gray/neutral surfaces with an Indigo accent.
+ * Light and dark are each hand-stepped (not an automatic flip).
+ * Status colors are reserved for the quota meter marks; all text
+ * wears text tokens, never a status color (dataviz status rule).
+ * ============================================================ */
+
+:root,
+[data-theme='light'] {
+  --bg-secondary: #f9fafb;   /* gray-50 page */
+  --bg-primary: #ffffff;     /* white card */
+  --bg-tertiary: #f3f4f6;    /* gray-100 hover/track */
+
+  --text-primary: #111827;   /* gray-900 */
+  --text-secondary: #4b5563; /* gray-600 */
+  --text-tertiary: #9ca3af;  /* gray-400 */
+
+  --border-color: #e5e7eb;   /* gray-200 */
+  --border-hover: #d1d5db;   /* gray-300 */
+
+  --primary-color: #6366f1;  /* indigo-500 */
+  --primary-hover: #4f46e5;  /* indigo-600 */
+  --primary-contrast: #ffffff;
+
+  --success-color: #10b981;        /* remaining >= 70% */
+  --quota-medium-color: #f59e0b;   /* remaining >= 30% */
+  --danger-color: #ef4444;         /* remaining < 30% */
+
+  --shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+
+  --card-gradient: linear-gradient(180deg, rgba(99, 102, 241, 0.06), rgba(99, 102, 241, 0));
+  --badge-bg: rgba(99, 102, 241, 0.1);
+  --badge-text: #4f46e5;
+  --badge-border: rgba(99, 102, 241, 0.22);
+
+  --status-active-bg: #d1fae5;
+  --status-active-text: #065f46;
+
+  --error-bg: rgba(198, 87, 70, 0.1);
+  --error-border: var(--danger-color);
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg-secondary: #111827;   /* gray-900 */
+  --bg-primary: #1f2937;     /* gray-800 */
+  --bg-tertiary: #374151;    /* gray-700 */
+
+  --text-primary: #f9fafb;   /* gray-50 */
+  --text-secondary: #d1d5db; /* gray-300 */
+  --text-tertiary: #6b7280;  /* gray-500 */
+
+  --border-color: #374151;   /* gray-700 */
+  --border-hover: #4b5563;   /* gray-600 */
+
+  --primary-color: #6366f1;
+  --primary-hover: #818cf8;  /* indigo-400, brightened for dark */
+  --primary-contrast: #ffffff;
+
+  --success-color: #10b981;
+  --quota-medium-color: #fbbf24; /* amber-400, stepped for dark */
+  --danger-color: #ef4444;
+
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.35);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+
+  --card-gradient: linear-gradient(180deg, rgba(99, 102, 241, 0.16), rgba(99, 102, 241, 0));
+  --badge-bg: rgba(129, 140, 248, 0.18);
+  --badge-text: #a5b4fc;
+  --badge-border: rgba(129, 140, 248, 0.3);
+
+  --status-active-bg: rgba(6, 78, 59, 0.3);
+  --status-active-text: #6ee7b7;
+
+  --error-bg: rgba(239, 68, 68, 0.16);
+  --error-border: var(--danger-color);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+[hidden] {
+  display: none !important;
+}

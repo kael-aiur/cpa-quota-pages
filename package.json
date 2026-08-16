@@ -1,0 +1,32 @@
+{
+  "name": "cpa-quota-pages",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev:user": "vite --mode user",
+    "dev:admin": "vite --mode admin",
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "build:user": "vite build --mode user",
+    "build:admin": "vite build --mode admin",
+    "build": "npm run clean && npm run build:user && npm run build:admin",
+    "check:dist": "node scripts/check-dist.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^26.2.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.4",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^4.1.10"
+  }
+}

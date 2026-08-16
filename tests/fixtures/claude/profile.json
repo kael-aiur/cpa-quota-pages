@@ -1,0 +1,10 @@
+{
+  "account": {
+    "has_claude_max": false,
+    "has_claude_pro": true
+  },
+  "organization": {
+    "organization_type": "claude_team",
+    "subscription_status": "active"
+  }
+}
