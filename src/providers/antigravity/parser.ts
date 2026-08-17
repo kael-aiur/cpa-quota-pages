@@ -1,4 +1,6 @@
 import type { AuthFile, JsonRecord } from '../../api/types';
+import type { RecentRequestsCarrier } from '../types';
+import { extractRecentRequests } from '../shared';
 
 export type AntigravityQuotaBucket = {
   id: string;
@@ -24,7 +26,7 @@ export type AntigravitySubscription = {
   tierName: string | null;
 };
 
-export type AntigravityQuotaData = {
+export type AntigravityQuotaData = RecentRequestsCarrier & {
   groups: AntigravityQuotaGroup[];
   subscription: AntigravitySubscription | null;
   serverTimeOffsetMs: number | null;
@@ -248,9 +250,11 @@ export function parseAntigravityQuota(
   groups.sort((left, right) => left.label.localeCompare(right.label));
 
   const nestedSubscription = parsed?.subscription ?? parsed?.subscriptionSummary;
+  const recentRequests = extractRecentRequests(parsed);
   return {
     groups,
     subscription: parseAntigravitySubscription(nestedSubscription),
     serverTimeOffsetMs: dateOffset(headers, nowMs),
+    ...(recentRequests !== undefined ? { recentRequests } : {}),
   };
 }

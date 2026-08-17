@@ -4,7 +4,6 @@ import { resolve } from 'node:path';
 import type { AuthenticatedSession } from '../../src/auth/types';
 import type { ApiCallResult, AuthFile, CpaApi } from '../../src/api/types';
 import { createQuotaApp } from '../../src/app/createQuotaApp';
-import { createQuotaStore, type QuotaStore } from '../../src/app/state';
 import { createResetRequestHandler, RESET_BUTTON_LABEL } from '../../src/admin/resetFlow';
 import type { CodexResetCapability } from '../../src/app/types';
 import type { MinuteClock } from '../../src/quota/minuteClock';
@@ -184,13 +183,13 @@ describe('createQuotaApp orchestration', () => {
     });
 
     root.querySelector<HTMLElement>('[data-provider="kimi"]')!.click();
-    const names = Array.from(root.querySelectorAll('.fileName')).map((e) => e.textContent);
-    expect(names.some((n) => n?.includes('Kimi'))).toBe(true);
-    expect(names.some((n) => n?.includes('Claude'))).toBe(false);
+    const providers = Array.from(root.querySelectorAll('.typeBadge')).map((e) => e.textContent);
+    expect(providers).toEqual(['Kimi']);
+    expect(root.querySelectorAll('.fileName')).toHaveLength(1);
     app.destroy();
   });
 
-  it('resets the current page to 1 when the provider tab changes', async () => {
+  it('shows all accounts without page navigation', async () => {
     const files = Array.from({ length: 22 }, (_, i) => claudeFile(`c${i}.json`))
       .concat([kimiFile('k0.json')]);
     const root = newRoot();
@@ -199,17 +198,14 @@ describe('createQuotaApp orchestration', () => {
       session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(), pageSize: 10,
     });
 
-    // Move to page 2 on the "all" tab.
-    root.querySelector<HTMLElement>('[data-action="page-next"]')!.click();
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('2');
-
-    // Switching to kimi (1 account) must clamp/reset to page 1.
+    expect(root.querySelectorAll('.card')).toHaveLength(23);
+    expect(root.querySelector('.pagination')).toBeNull();
     root.querySelector<HTMLElement>('[data-provider="kimi"]')!.click();
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('1');
+    expect(root.querySelectorAll('.card')).toHaveLength(1);
     app.destroy();
   });
 
-  it('resets the current page to 1 when the sort mode changes', async () => {
+  it('sort changes preserve the full account list', async () => {
     const files = Array.from({ length: 12 }, (_, i) => claudeFile(`c${i}.json`));
     const root = newRoot();
     const app = await startApp({
@@ -217,14 +213,13 @@ describe('createQuotaApp orchestration', () => {
       session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(), pageSize: 10,
     });
 
-    root.querySelector<HTMLElement>('[data-action="page-next"]')!.click();
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('2');
     root.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')!.click();
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('1');
+    expect(root.querySelectorAll('.card')).toHaveLength(12);
+    expect(root.querySelector('.pagination')).toBeNull();
     app.destroy();
   });
 
-  it('clamps the page when a narrower provider shrinks the page count', async () => {
+  it('does not keep stale pagination state after provider filtering', async () => {
     const files = Array.from({ length: 12 }, (_, i) => claudeFile(`c${i}.json`))
       .concat([kimiFile('k0.json')]);
     const root = newRoot();
@@ -233,12 +228,9 @@ describe('createQuotaApp orchestration', () => {
       session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(), pageSize: 10,
     });
 
-    // all tab: 2 pages; go to page 2.
-    root.querySelector<HTMLElement>('[data-action="page-next"]')!.click();
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('2');
-    // kimi has 1 account → 1 page; page must clamp to 1.
     root.querySelector<HTMLElement>('[data-provider="kimi"]')!.click();
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('1');
+    expect(root.querySelectorAll('.card')).toHaveLength(1);
+    expect(root.querySelector('.pageStatus')).toBeNull();
     app.destroy();
   });
 
@@ -257,68 +249,7 @@ describe('createQuotaApp orchestration', () => {
     app.destroy();
   });
 
-  it('query-all queries only the current page: one batch of at most the page size (max 20)', async () => {
-    // Specification §7.1: “查询全部额度”只查询当前页，最多 20 个认证账号.
-    // 25 accounts at pageSize 5 => the current page is the FIRST FIVE; a
-    // single actions.queryCurrentPage batch of exactly those five ids must be
-    // the whole query-all traffic. A regression back to iterate-all-visible
-    // issues 25 apiCalls across five batches and fails every assertion below;
-    // a regression to "pass every visible id in one call" additionally throws
-    // the >20 RangeError inside actions.queryCurrentPage (hard cap covered in
-    // tests/app/actions.test.ts).
-    //
-    // Direct batch observation (injected store): every ACCEPTED beginBatch is
-    // exactly one actions.queryCurrentPage call that passed its guards, and
-    // the loading marks inside that epoch are exactly that batch's accounts
-    // (loading marks are published before the batch's apiCalls, so a complete
-    // apiCall count implies a complete batch log).
-    const files = Array.from({ length: 25 }, (_, i) => claudeFile(`c${i}.json`));
-    const api = fakeApi(files);
-    const calls: string[] = [];
-    const store = createQuotaStore();
-    const batchSizes: number[] = [];
-    const realBeginBatch = store.beginBatch;
-    store.beginBatch = (owner: symbol) => {
-      const accepted = realBeginBatch(owner);
-      if (accepted) batchSizes.push(0); // new queryCurrentPage epoch
-      return accepted;
-    };
-    const realSetQuota = store.setQuota;
-    store.setQuota = (accountId: string, generation: number, quota: Parameters<QuotaStore['setQuota']>[2]) => {
-      if (quota.status === 'loading' && batchSizes.length > 0) batchSizes[batchSizes.length - 1] += 1;
-      return realSetQuota(accountId, generation, quota);
-    };
-    const root = newRoot();
-    const app = await startApp({
-      root, mode: 'user', revealAccountIdentity: false, pageSize: 5,
-      session: fakeSession(), api, media: fakeMedia(), clock: fakeClock(),
-      providerQueries: { claude: claudeQuery(calls) },
-      store,
-    });
-
-    root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
-    await vi.waitFor(
-      () => expect(mockCount(api.apiCall)).toBe(5),
-      { timeout: 15000, interval: 50 },
-    );
-    // Exactly ONE batch, sized exactly like the current page.
-    expect(batchSizes).toEqual([5]);
-    // ...and it queried the first five accounts only.
-    expect(calls).toEqual(['q:c0.json', 'q:c1.json', 'q:c2.json', 'q:c3.json', 'q:c4.json']);
-    // Settle, then confirm no further batch sneaks in for the other 20.
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(batchSizes).toEqual([5]);
-    expect(mockCount(api.apiCall)).toBe(5);
-    // No card should be in an error state from a RangeError batch overflow.
-    const states = Array.from(root.querySelectorAll('.card')).map((c) => c.getAttribute('data-state'));
-    expect(states).not.toContain('error');
-    app.destroy();
-  }, 30000);
-
-  it('query-all after pagination queries exactly the newly visible page', async () => {
-    // The current page is derived at click time: page 2 of 25 accounts at
-    // pageSize 5 is accounts 5..9, and query-all must re-target it after the
-    // page change (spec §7.1: current page only, never the whole list).
+  it('query-all queries every account regardless of page size', async () => {
     const files = Array.from({ length: 25 }, (_, i) => claudeFile(`c${i}.json`));
     const api = fakeApi(files);
     const calls: string[] = [];
@@ -329,15 +260,16 @@ describe('createQuotaApp orchestration', () => {
       providerQueries: { claude: claudeQuery(calls) },
     });
 
-    root.querySelector<HTMLElement>('[data-action="page-next"]')!.click();
+    expect(root.querySelectorAll('.card')).toHaveLength(25);
     root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
     await vi.waitFor(
-      () => expect(mockCount(api.apiCall)).toBe(5),
+      () => expect(mockCount(api.apiCall)).toBe(25),
       { timeout: 15000, interval: 50 },
     );
     await new Promise((resolve) => setTimeout(resolve, 150));
-    expect(calls).toEqual(['q:c5.json', 'q:c6.json', 'q:c7.json', 'q:c8.json', 'q:c9.json']);
-    expect(mockCount(api.apiCall)).toBe(5);
+    expect(calls).toHaveLength(25);
+    expect(mockCount(api.apiCall)).toBe(25);
+    expect(Array.from(root.querySelectorAll('.card')).every((card) => card.getAttribute('data-state') === 'success')).toBe(true);
     app.destroy();
   }, 30000);
 
@@ -486,7 +418,7 @@ describe('createQuotaApp UI preference persistence', () => {
     sessionStorage.clear();
   });
 
-  it('honors a pre-seeded provider and sort mode on start', async () => {
+  it('defaults to all providers while honoring the stored sort mode', async () => {
     sessionStorage.setItem(key, JSON.stringify({ provider: 'kimi', sortMode: 'soonest' }));
     const files = [claudeFile('c1.json'), kimiFile('k1.json')];
     const root = newRoot();
@@ -495,11 +427,10 @@ describe('createQuotaApp UI preference persistence', () => {
       session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
     });
 
-    expect(root.querySelector<HTMLElement>('[data-provider="kimi"]')?.getAttribute('aria-selected')).toBe('true');
-    expect(root.querySelector<HTMLElement>('[data-provider="all"]')?.getAttribute('aria-selected')).toBe('false');
+    expect(root.querySelector<HTMLElement>('[data-provider="kimi"]')?.getAttribute('aria-selected')).toBe('false');
+    expect(root.querySelector<HTMLElement>('[data-provider="all"]')?.getAttribute('aria-selected')).toBe('true');
     expect(root.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')?.getAttribute('aria-pressed')).toBe('true');
-    // Provider filter applies from the first render.
-    expect(root.querySelectorAll('.card').length).toBe(1);
+    expect(root.querySelectorAll('.card').length).toBe(2);
     app.destroy();
   });
 
@@ -529,7 +460,7 @@ describe('createQuotaApp UI preference persistence', () => {
     app.destroy();
   });
 
-  it('keeps both preferences across a simulated reload', async () => {
+  it('keeps sort preference but resets provider filter across a simulated reload', async () => {
     const files = [claudeFile('c1.json'), kimiFile('k1.json')];
     const root = newRoot();
     const app = await startApp({
@@ -545,7 +476,8 @@ describe('createQuotaApp UI preference persistence', () => {
       root: root2, mode: 'user', revealAccountIdentity: false,
       session: fakeSession(), api: fakeApi(files), media: fakeMedia(), clock: fakeClock(),
     });
-    expect(root2.querySelector<HTMLElement>('[data-provider="kimi"]')?.getAttribute('aria-selected')).toBe('true');
+    expect(root2.querySelector<HTMLElement>('[data-provider="kimi"]')?.getAttribute('aria-selected')).toBe('false');
+    expect(root2.querySelector<HTMLElement>('[data-provider="all"]')?.getAttribute('aria-selected')).toBe('true');
     expect(root2.querySelector<HTMLElement>('.sortTab[data-sort="soonest"]')?.getAttribute('aria-pressed')).toBe('true');
     app2.destroy();
   });

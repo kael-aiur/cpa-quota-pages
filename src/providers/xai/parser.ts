@@ -1,5 +1,6 @@
 import type { AuthFile, JsonRecord } from '../../api/types';
-import type { ProviderQuotaData, QuotaWindow } from '../types';
+import type { ProviderQuotaData, QuotaWindow, RecentRequest } from '../types';
+import { extractRecentRequests } from '../shared';
 
 export interface XaiBillingSummary {
   mode: 'billing' | 'paid-health';
@@ -24,6 +25,7 @@ export interface XaiBillingSummary {
   usedPercent: number | null;
   resetAtMs: number | null;
   periodHours: number | null;
+  recentRequests?: RecentRequest[];
 }
 
 export interface XaiQuotaData extends ProviderQuotaData {
@@ -86,6 +88,7 @@ export function parseXaiBilling(payload: unknown): XaiBillingSummary | null {
   const root = record(parsed);
   const config = record(root?.config);
   if (!config) return null;
+  const recentRequests = extractRecentRequests(root);
 
   const current = record(config.currentPeriod ?? config.current_period);
   const type = periodType(current?.type);
@@ -117,6 +120,7 @@ export function parseXaiBilling(payload: unknown): XaiBillingSummary | null {
     billingPeriodEnd: text(config.billingPeriodEnd ?? config.billing_period_end) ?? undefined,
     usedPercent, resetAtMs: resolvedType === 'weekly' ? activeEndMs : null,
     periodHours: resolvedType === 'weekly' && activeStartMs !== null && activeEndMs !== null ? (activeEndMs - activeStartMs) / 3600000 : null,
+    ...(recentRequests !== undefined ? { recentRequests } : {}),
   };
 }
 
@@ -142,6 +146,9 @@ export function mergeXaiBilling(weekly: XaiBillingSummary | null, monthly: XaiBi
     billingPeriodStart: weekly.billingPeriodStart ?? monthly.billingPeriodStart,
     billingPeriodEnd: weekly.billingPeriodEnd ?? monthly.billingPeriodEnd,
     usedPercent: weekly.usedPercent ?? monthly.usedPercent,
+    ...(weekly.recentRequests !== undefined
+      ? { recentRequests: weekly.recentRequests }
+      : monthly.recentRequests !== undefined ? { recentRequests: monthly.recentRequests } : {}),
   };
 }
 

@@ -21,6 +21,16 @@ export interface QuotaWindow {
   periodHours: number | null;
 }
 
+export interface RecentRequest {
+  time: string;
+  success: number | null;
+  failed: number | null;
+}
+
+export interface RecentRequestsCarrier {
+  recentRequests?: RecentRequest[];
+}
+
 export interface ProviderQueryContext {
   apiCall: (
     request: Parameters<CpaApi['apiCall']>[0],
@@ -31,7 +41,7 @@ export interface ProviderQueryContext {
   timeoutMs?: number;
 }
 
-export type ProviderQuotaData = {
+export type ProviderQuotaData = RecentRequestsCarrier & {
   windows: QuotaWindow[];
   [key: string]: unknown;
 };

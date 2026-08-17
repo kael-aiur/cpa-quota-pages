@@ -334,6 +334,100 @@
   padding-top: 2px;
 }
 
+/* ---------------- Recent request strip ---------------- */
+.recentRequests {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.recentRequestsHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.recentRequestsTitle {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.recentRequestsHint {
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.recentRequestsStrip {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  padding: 2px 0 4px;
+  scrollbar-width: thin;
+}
+
+.recentRequestCell {
+  display: block;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 20px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: help;
+  outline: none;
+}
+
+.recentRequestCell:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.recentRequestCell.is-high {
+  background-color: var(--success-color);
+  border-color: var(--success-color);
+}
+
+.recentRequestCell.is-medium {
+  background-color: var(--quota-medium-color);
+  border-color: var(--quota-medium-color);
+}
+
+/* Low follows the requested yellow family but uses a strong hatch so it is
+   distinguishable from the 30–80% medium state without relying on color alone. */
+.recentRequestCell.is-low {
+  background-color: var(--quota-medium-color);
+  border-color: var(--danger-color);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 3px,
+    color-mix(in srgb, var(--danger-color) 65%, transparent) 3px,
+    color-mix(in srgb, var(--danger-color) 65%, transparent) 5px
+  );
+}
+
+.recentRequestCell.is-idle {
+  background-color: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+
+.recentRequestCell.is-unknown {
+  background-color: transparent;
+  border-color: var(--text-tertiary);
+  background-image: radial-gradient(var(--text-tertiary) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+.recentRequestsEmpty {
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -388,22 +482,10 @@
 }
 
 .btn svg,
-.tab svg,
-.pageTitle svg,
-.modeBadge svg {
+.tab svg {
   width: 15px;
   height: 15px;
   flex-shrink: 0;
-}
-
-.themeToggle .moon {
-  display: none;
-}
-[data-theme='dark'] .themeToggle .sun {
-  display: none;
-}
-[data-theme='dark'] .themeToggle .moon {
-  display: inline;
 }
 
 /* ---------------- Reduced motion ---------------- */

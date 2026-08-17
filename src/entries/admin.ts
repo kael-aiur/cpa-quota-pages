@@ -30,7 +30,6 @@ const app = createQuotaApp({
     resolveTrigger: () => (document.activeElement instanceof HTMLElement ? document.activeElement : root),
   }),
   resetButtonLabel: RESET_BUTTON_LABEL,
-  title: '额度查询（管理员）',
 });
 
 void app.start().catch((error: unknown) => {

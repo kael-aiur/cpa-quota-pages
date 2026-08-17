@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderProviderBody } from '../../src/ui/renderProviderBody';
+import { renderProviderBody, renderRecentRequests } from '../../src/ui/renderProviderBody';
 import type { ClaudeQuotaData } from '../../src/providers/claude/types';
 import type { AntigravityQuotaData } from '../../src/providers/antigravity/parser';
 import type { CodexQuotaData } from '../../src/providers/codex/parser';
@@ -75,6 +75,51 @@ describe('renderProviderBody meter semantics', () => {
     expect(body.querySelectorAll('img').length).toBe(0);
     expect(body.textContent).toContain(markup);
     expect((window as unknown as { __pwnedBody?: number }).__pwnedBody).toBeUndefined();
+  });
+});
+
+describe('renderProviderBody recent requests', () => {
+  it('renders 10-minute request blocks with totals and success-rate labels', () => {
+    const data: ClaudeQuotaData = {
+      windows: [],
+      extraUsage: null,
+      planType: null,
+      recentRequests: [
+        { time: '20:00-20:10', success: 8, failed: 1 },
+        { time: '20:10-20:20', success: 2, failed: 8 },
+        { time: '20:20-20:30', success: 0, failed: 0 },
+      ],
+    };
+    const body = renderRecentRequests(data.recentRequests);
+    if (!body) throw new Error('missing recent request body');
+    const cells = body.querySelectorAll('.recentRequestCell');
+    expect(cells).toHaveLength(3);
+    expect(cells[0].getAttribute('data-state')).toBe('high');
+    expect(cells[1].getAttribute('data-state')).toBe('low');
+    expect(cells[2].getAttribute('data-state')).toBe('idle');
+    expect(cells[0].getAttribute('title')).toContain('共 9 次请求');
+    expect(cells[0].getAttribute('title')).toContain('成功率 89%');
+    expect(cells[2].getAttribute('title')).toContain('无请求');
+  });
+
+  it('keeps incomplete request counts explicitly uncomputable', () => {
+    const data: KimiQuotaData = {
+      windows: [],
+      recentRequests: [{ time: '22:00-22:10', success: null, failed: 2 }],
+    };
+    const body = renderRecentRequests(data.recentRequests);
+    if (!body) throw new Error('missing recent request body');
+    const cell = body.querySelector('.recentRequestCell');
+    expect(cell?.getAttribute('data-state')).toBe('unknown');
+    expect(cell?.getAttribute('aria-label')).toContain('无法计算');
+  });
+
+  it('does not render the strip when the provider omits recent requests', () => {
+    const body = renderProviderBody('codex', {
+      windows: [], accountId: null, planType: null, subscriptionActiveUntil: null,
+      credits: [], availableCreditCount: 0, applicableAvailableCreditCount: 0,
+    }, NOW);
+    expect(body.querySelector('.recentRequests')).toBeNull();
   });
 });
 

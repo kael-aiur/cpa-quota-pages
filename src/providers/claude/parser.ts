@@ -1,4 +1,5 @@
 import type { JsonRecord, QuotaWindow } from '../types';
+import { extractRecentRequests } from '../shared';
 import type { ClaudeExtraUsage, ClaudeQuotaData } from './types';
 
 export type { ClaudeQuotaData } from './types';
@@ -19,6 +20,7 @@ interface UsageLimit {
 interface ClaudeUsagePayload extends JsonRecord {
   limits?: unknown;
   extra_usage?: unknown;
+  recent_requests?: unknown;
 }
 
 const NAMED_WINDOWS = [
@@ -165,9 +167,11 @@ export function parseClaudeQuota(usage: unknown, profile?: unknown): ClaudeQuota
     ));
   }
 
+  const recentRequests = extractRecentRequests(payload);
   return {
     windows,
     extraUsage: (record(payload.extra_usage) as ClaudeExtraUsage | null) ?? null,
     planType: planType(profile),
+    ...(recentRequests !== undefined ? { recentRequests } : {}),
   };
 }

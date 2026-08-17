@@ -3,10 +3,11 @@
  * No fixed iframe height: the page flows and the grid reflows.
  * ============================================================ */
 
+/* `#app` is the mount point and the rendered page shell. */
+#app,
 .container {
-  max-width: 1280px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 30px 10px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -16,58 +17,9 @@
 .pageHeader {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 16px;
   flex-wrap: wrap;
-}
-
-.pageHeader-text {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.pageTitle {
-  font-size: 26px;
-  font-weight: 700;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.pageTitle .dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 999px;
-  background: #7c6cdc;
-  box-shadow: 0 0 0 4px rgba(124, 108, 220, 0.18);
-  flex-shrink: 0;
-}
-
-.modeBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  background-color: var(--badge-bg);
-  color: var(--badge-text);
-  border: 1px solid var(--badge-border);
-}
-.modeBadge svg {
-  width: 12px;
-  height: 12px;
-}
-
-.description {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 0;
 }
 
 .headerActions {
@@ -159,19 +111,72 @@
   border-color: var(--border-color);
 }
 
-/* ---------------- Card grid ---------------- */
-.grid {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+/* ---------------- Stats ---------------- */
+.statsBar {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 520px) {
+.stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 112px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  box-shadow: var(--shadow);
+}
+
+.statLabel {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.statValue {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-success {
+  border-color: color-mix(in srgb, var(--success-color) 30%, var(--border-color));
+}
+
+.stat-error {
+  border-color: color-mix(in srgb, var(--danger-color) 30%, var(--border-color));
+}
+
+/* ---------------- Card grid ---------------- */
+/* Rendered as `.cardsGrid` by renderApp — fixed 4 columns per row. */
+.cardsGrid,
+.grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@media (max-width: 1100px) {
+  .cardsGrid,
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .cardsGrid,
   .grid {
     grid-template-columns: 1fr;
   }
+  #app,
   .container {
-    padding: 16px;
+    padding-top: 30px;
   }
   .pageHeader {
     align-items: stretch;

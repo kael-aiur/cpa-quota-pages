@@ -23,7 +23,6 @@ const app = createQuotaApp({
   root,
   mode: 'user',
   revealAccountIdentity: false,
-  title: '额度查询',
 });
 
 void app.start().catch((error: unknown) => {

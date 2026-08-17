@@ -11,15 +11,10 @@
  *  - **Auth before auth-files**: `start()` bootstraps identity, renders the
  *    auth gate, and only then loads auth-files. No quota `api-call` is issued
  *    during start — quota is strictly user-initiated.
- *  - **Tabs / sort / pagination**: selection lives in this controller; changing
- *    provider or sort resets the page to 1, and the rendered page is clamped to
- *    the valid range by the pure view.
+ *  - **Full-list rendering and querying**: provider filtering and sorting only
+ *    affect presentation; the batch query always includes every account.
  *  - **List refresh issues no quota query**: the refresh handler reloads
  *    auth-files only.
- *  - **Query all = current page only (spec §7.1)**: the "query all" handler
- *    queries exactly the accounts the view renders on the current page (≤20,
- *    matching the official #/quota behavior); it never walks the whole list,
- *    and a single card failure never aborts its siblings.
  *  - **Auth invalidation hides quota**: a session abort invalidates the store
  *    and re-renders the auth gate, so quota never survives a lost session.
  *  - **Destroy is idempotent**: clock, in-flight work, listeners, theme, DOM
@@ -39,7 +34,6 @@ import { bootstrapSub2ApiAuth } from '../auth/bootstrap';
 import type { AuthenticatedSession } from '../auth/types';
 import { createMinuteClock } from '../quota/minuteClock';
 import type { MinuteClock } from '../quota/minuteClock';
-import { buildAnonymousAccountLabel } from '../quota/identity';
 import { readUiPreferences, writeProviderPreference, writeSortModePreference } from '../quota/uiPreferences';
 import type { AccountEntry } from '../quota/types';
 import type { ProviderQueryContext } from '../providers/types';
@@ -49,7 +43,6 @@ import { createQuotaStore } from './state';
 import type { QuotaErrorInfo, QuotaLoadState, QuotaStore } from './state';
 import type { QuotaAppController, QuotaAppOptions, QuotaResetBridge } from './types';
 import {
-  derivePage,
   initialUiState,
   renderApp,
   type AuthPhase,
@@ -69,15 +62,17 @@ function toErrorInfo(error: unknown): QuotaErrorInfo {
   return { name: 'Error', message: String(error) };
 }
 
-function stableIdentifier(entry: AccountEntry): string {
+function accountDisplayName(entry: AccountEntry): string {
   const file = entry.file;
-  return String(file.path ?? file.id ?? file.email ?? file.account ?? file.name ?? entry.id);
+  for (const value of [file.email, file.account, file.name]) {
+    if (typeof value === 'string' && value.trim() !== '') return value.trim();
+  }
+  return entry.id;
 }
 
 export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
   const { root, mode, revealAccountIdentity } = options;
   const doc = options.document ?? (typeof document !== 'undefined' ? document : undefined);
-  const pageSize = options.pageSize ?? 20;
   const timeoutMs = options.timeoutMs;
 
   const store: QuotaStore = options.store ?? createQuotaStore();
@@ -91,14 +86,12 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
   let api: CpaApi | undefined = options.api;
   let actions: QuotaActions | undefined;
   let themeCleanup: (() => void) | undefined;
-  const labelCache = new Map<string, string>();
   // Session-scoped UI preferences: seed the provider/sort selections from
   // sessionStorage (validated + clamped inside readUiPreferences; corrupt or
   // missing data degrades to the defaults). Never token/quota/auth material.
   const preferences = readUiPreferences();
   const uiState: QuotaUiState = {
     ...initialUiState(),
-    ...(preferences.provider !== undefined ? { selectedProvider: preferences.provider } : {}),
     ...(preferences.sortMode !== undefined ? { sortMode: preferences.sortMode } : {}),
   };
 
@@ -115,40 +108,24 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     }
   }
 
-  const resolveLabel = (entry: AccountEntry): string => {
-    if (mode === 'admin' && revealAccountIdentity) return entry.id; // card renders the identity itself
-    return labelCache.get(entry.id) ?? entry.id;
-  };
+  const resolveLabel = (entry: AccountEntry): string => accountDisplayName(entry);
 
   const render = (): void => {
     renderHandle.render(store.getState(), uiState, authPhase);
   };
 
-  const refreshLabels = async (): Promise<void> => {
-    if (mode === 'admin' && revealAccountIdentity) return;
-    const accounts = store.getState().accounts;
-    const missing = accounts.filter((account) => !labelCache.has(account.id));
-    if (missing.length === 0) {
-      if (!destroyed) render();
-      return;
-    }
-    await Promise.all(
-      missing.map(async (account) => {
-        labelCache.set(account.id, await buildAnonymousAccountLabel(account.provider, stableIdentifier(account)));
-      }),
-    );
-    if (!destroyed) render();
+  const reconcileSelectedProvider = (): void => {
+    if (uiState.selectedProvider === 'all') return;
+    const hasProvider = store.getState().accounts.some((account) => account.provider === uiState.selectedProvider);
+    if (hasProvider) return;
+    uiState.selectedProvider = 'all';
   };
 
   const handleQueryAll = async (): Promise<void> => {
     if (!actions || destroyed) return;
-    // Specification §7.1: “查询全部额度”只查询当前页，最多 20 个认证账号.
-    // derivePage applies the same sort + clamp the view renders, so this is
-    // exactly the account set the user sees; pageSize is capped at 20 by the
-    // entries, which keeps actions.queryCurrentPage (hard cap 20) satisfied.
-    const page = derivePage(store.getState(), uiState, pageSize, clock.getSnapshot());
+    const accountIds = store.getState().accounts.map((account) => account.id);
     try {
-      await actions.queryCurrentPage(page.items.map((account) => account.id));
+      await actions.queryAccounts(accountIds);
     } catch {
       // A batch-level failure is surfaced per-card through the store.
     }
@@ -187,7 +164,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
       void (async () => {
         try {
           await actions.reloadAccounts();
-          await refreshLabels();
+          reconcileSelectedProvider();
         } catch {
           // Reload failures clear loading state via the store; nothing to surface here.
         }
@@ -198,8 +175,6 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     ...(mode === 'admin' && options.onResetRequest ? { onReset: (accountId: string) => handleReset(accountId) } : {}),
     onSelectProvider: (selection) => {
       uiState.selectedProvider = selection;
-      uiState.currentPage = 1;
-      // Persist only real providers; "all" is the implicit default and is not stored.
       if (selection !== 'all') {
         try { writeProviderPreference(selection); } catch { /* storage unavailable; preference is optional */ }
       }
@@ -207,18 +182,8 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     },
     onSelectSort: (sortMode) => {
       uiState.sortMode = sortMode;
-      uiState.currentPage = 1;
       try { writeSortModePreference(sortMode); } catch { /* storage unavailable; preference is optional */ }
       if (!destroyed) render();
-    },
-    onPageChange: (page) => {
-      uiState.currentPage = page;
-      if (!destroyed) render();
-    },
-    onToggleTheme: () => {
-      if (!doc) return;
-      const current = doc.documentElement.getAttribute('data-theme');
-      doc.documentElement.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
     },
     onTimelineMode: (timelineMode) => {
       uiState.timelineMode = timelineMode;
@@ -240,14 +205,11 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     mode,
     revealAccountIdentity,
     resetAction: mode === 'admin' && options.onResetRequest ? { label: options.resetButtonLabel ?? '重置' } : null,
-    pageSize,
+    pageSize: options.pageSize ?? 20,
     now: () => clock.getSnapshot(),
     clock,
     handlers: viewHandlers,
     resolveLabel,
-    ...(options.title !== undefined || options.description !== undefined
-      ? { labels: { ...(options.title !== undefined ? { title: options.title } : {}), ...(options.description !== undefined ? { description: options.description } : {}) } }
-      : {}),
   });
 
   const unsubStore = store.subscribe(() => { if (!destroyed) render(); });
@@ -305,7 +267,7 @@ export function createQuotaApp(options: QuotaAppOptions): QuotaAppController {
     render();
     try {
       await actions.reloadAccounts();
-      await refreshLabels();
+      reconcileSelectedProvider();
     } catch (error) {
       if (destroyed) return;
       // Auth succeeded but the account list failed to load; surface the error

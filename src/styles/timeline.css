@@ -24,7 +24,8 @@
   --tl-cat-xai: #eda100;
   --tl-cat-kimi: #e87ba4;
 
-  --tl-lane-height: 34px;
+  --tl-lane-height: 42px;
+  --tl-axis-height: 28px;
   --tl-lane-gap: 8px;
 
   --tl-window-height: 18px;
@@ -113,6 +114,28 @@
   gap: 6px;
 }
 
+.timelineEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 16px;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.timelineEmpty strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.timelineEmpty span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
 .timelineNav,
 .timelineToday {
   appearance: none;
@@ -178,7 +201,8 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  width: 132px;
+  width: 280px;
+  padding-top: calc(var(--tl-axis-height) + 4px);
   border-right: 1px solid var(--border-color);
   background-color: var(--bg-primary);
 }
@@ -215,11 +239,9 @@
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.25;
-  word-break: break-all;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .timelineTrackScroll {
@@ -237,6 +259,30 @@
   padding: 4px 0;
 }
 
+.timelineDateAxis {
+  position: relative;
+  height: var(--tl-axis-height);
+  border-bottom: 1px solid var(--tl-grid);
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.timelineDateMark {
+  position: absolute;
+  top: 5px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.timelineDateMark:first-child {
+  transform: none;
+}
+
+.timelineDateMark:last-child {
+  transform: translateX(-100%);
+}
+
 .timelineLaneTrack {
   position: relative;
   height: var(--tl-lane-height);
@@ -250,7 +296,7 @@
 /* ---------------- Now line ---------------- */
 .timelineNow {
   position: absolute;
-  top: 0;
+  top: calc(var(--tl-axis-height) + 4px);
   bottom: 0;
   width: 2px;
   margin-left: -1px;
@@ -354,10 +400,11 @@
 
 /* ---------------- Tooltip ---------------- */
 .timelineTooltip {
-  position: absolute;
-  top: 4px;
-  transform: translateX(-50%);
-  max-width: 260px;
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  width: max-content;
+  max-width: min(260px, calc(100vw - 16px));
   padding: 6px 10px;
   background-color: var(--bg-primary);
   color: var(--text-primary);
@@ -366,13 +413,8 @@
   box-shadow: var(--shadow-md);
   font-size: 12px;
   line-height: 1.4;
-  z-index: 5;
-  pointer-events: none;
   white-space: normal;
   word-break: break-word;
-  transition:
-    opacity 0.12s ease,
-    transform 0.12s ease;
 }
 
 .timelineTooltip[hidden] {

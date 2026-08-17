@@ -55,7 +55,11 @@ function abortReason(signal: AbortSignal | undefined, results: PromiseSettledRes
 }
 
 function emptyData(billing: XaiBillingSummary | null): XaiQuotaData {
-  return { windows: [], billing };
+  return {
+    windows: [],
+    billing,
+    ...(billing?.recentRequests !== undefined ? { recentRequests: billing.recentRequests } : {}),
+  };
 }
 
 async function paidHealth(file: AuthFile, context: ProviderQueryContext): Promise<XaiBillingSummary> {

@@ -1,5 +1,5 @@
 import type { AuthFile } from '../api/types';
-import type { Provider } from './types';
+import type { Provider, RecentRequest } from './types';
 
 export function readBoolean(value: unknown): boolean {
   if (typeof value === 'boolean') return value;
@@ -12,6 +12,42 @@ export function readBoolean(value: unknown): boolean {
 
 export function isDisabled(file: AuthFile): boolean {
   return readBoolean(file.disabled);
+}
+
+function recentCount(value: unknown): number | null {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() ? Number(value) : NaN;
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+export function normalizeRecentRequests(value: unknown): RecentRequest[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.flatMap((item): RecentRequest[] => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return [];
+    const row = item as Record<string, unknown>;
+    const time = typeof row.time === 'string' ? row.time.trim() : '';
+    if (!time) return [];
+    return [{ time, success: recentCount(row.success), failed: recentCount(row.failed) }];
+  });
+}
+
+export function extractRecentRequests(value: unknown, depth = 0): RecentRequest[] | undefined {
+  if (depth > 4 || typeof value !== 'object' || value === null) return undefined;
+  if (Array.isArray(value)) {
+    for (const child of value) {
+      const found = extractRecentRequests(child, depth + 1);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const row = value as Record<string, unknown>;
+  for (const key of ['recent_requests', 'recentRequests']) {
+    if (key in row) return normalizeRecentRequests(row[key]);
+  }
+  for (const child of Object.values(row)) {
+    const found = extractRecentRequests(child, depth + 1);
+    if (found !== undefined) return found;
+  }
+  return undefined;
 }
 
 export function normalizeProvider(value: unknown): Provider | null {

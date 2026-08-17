@@ -6,7 +6,7 @@ import type { ProviderQuery, ProviderQueryContext } from '../providers/types';
 import { createPageLifecycle, type PageLifecycle } from './lifecycle';
 import type { QuotaLoadState, QuotaStore } from './state';
 
-const MAX_BATCH_SIZE = 20;
+const LEGACY_MAX_BATCH_SIZE = 20;
 type QueryMap = Partial<Record<Provider, ProviderQuery>>;
 
 export interface QuotaActionsOptions {
@@ -21,6 +21,8 @@ export interface QuotaActionsOptions {
 export interface QuotaActions {
   reloadAccounts(): Promise<void>;
   queryOne(accountId: string): Promise<void>;
+  queryAccounts(accountIds: string[]): Promise<void>;
+  /** @deprecated Use queryAccounts; retained for integrations built against the paged API. */
   queryCurrentPage(accountIds: string[]): Promise<void>;
   destroy(): void;
   resetCodex?(accountId: string): Promise<void>;
@@ -109,8 +111,7 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
     }
   };
 
-  const queryCurrentPage = async (accountIds: string[]): Promise<void> => {
-    if (accountIds.length > MAX_BATCH_SIZE) throw new RangeError(`最多查询 ${MAX_BATCH_SIZE} 个账号`);
+  const queryAccounts = async (accountIds: string[]): Promise<void> => {
     if (destroyed || lifecycle.signal.aborted || batchInFlight) return;
     if (!options.store.beginBatch(batchOwner)) return;
     batchInFlight = true;
@@ -168,6 +169,11 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
     }
   };
 
+  const queryCurrentPage = async (accountIds: string[]): Promise<void> => {
+    if (accountIds.length > LEGACY_MAX_BATCH_SIZE) throw new RangeError(`最多查询 ${LEGACY_MAX_BATCH_SIZE} 个账号`);
+    await queryAccounts(accountIds);
+  };
+
   const destroy = (): void => {
     if (destroyed) return;
     destroyed = true;
@@ -177,5 +183,5 @@ export function createQuotaActions(options: QuotaActionsOptions): QuotaActions {
     options.store.endBatch(batchOwner);
   };
 
-  return { reloadAccounts, queryOne, queryCurrentPage, destroy };
+  return { reloadAccounts, queryOne, queryAccounts, queryCurrentPage, destroy };
 }

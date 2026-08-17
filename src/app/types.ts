@@ -87,14 +87,10 @@ export interface QuotaAppOptions {
   store?: QuotaStore;
   /** Override the per-provider query registry (unit tests inject deterministic queries). */
   providerQueries?: Partial<Record<Provider, ProviderQuery>>;
-  /** Page size for the account grid and the max batch size (default 20). */
+  /** @deprecated The account grid is no longer paginated; retained for host compatibility. */
   pageSize?: number;
   /** Per-request timeout forwarded to provider queries and the reset capability. */
   timeoutMs?: number;
-  /** Header title override. */
-  title?: string;
-  /** Header description override. */
-  description?: string;
 }
 
 export interface QuotaAppController {

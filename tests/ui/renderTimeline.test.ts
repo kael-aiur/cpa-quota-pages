@@ -91,13 +91,18 @@ afterEach(() => {
 });
 
 describe('renderTimeline empty state', () => {
-  it('returns null when there are no lanes', () => {
-    expect(renderTimeline(model({ lanes: [] }), handlers())).toBeNull();
+  it('keeps the mode shell when there are no lanes', () => {
+    const root = renderTimeline(model({ lanes: [] }), handlers());
+    expect(root.getAttribute('data-state')).toBe('empty');
+    expect(root.querySelector('.timelineModeTabs')).not.toBeNull();
+    expect(root.querySelector('[data-reason="not-loaded"]')).not.toBeNull();
   });
 
-  it('returns null when every lane has no parseable (projected) windows', () => {
+  it('keeps the mode shell when no lane is compatible with the selected mode', () => {
     const emptyProjected = projectedLane({ windows: [], credits: [] });
-    expect(renderTimeline(model({ lanes: [emptyProjected] }), handlers())).toBeNull();
+    const root = renderTimeline(model({ lanes: [emptyProjected] }), handlers());
+    expect(root.getAttribute('data-state')).toBe('empty');
+    expect(root.querySelector('[data-reason="no-compatible-window"]')).not.toBeNull();
   });
 
   it('keeps lanes that still project windows and drops the empty ones', () => {
@@ -106,8 +111,8 @@ describe('renderTimeline empty state', () => {
     const root = renderTimeline(model({ lanes: [good, empty] }), handlers());
     expect(root).not.toBeNull();
     const names = Array.from(root!.querySelectorAll('.timelineLaneName')).map((el) => el.textContent ?? '');
-    expect(names).toContain('Claude · KEEP');
-    expect(names).not.toContain('Codex · DROP');
+    expect(names).toContain('【Claude】Claude · KEEP');
+    expect(names).not.toContain('【Codex】Codex · DROP');
   });
 });
 
@@ -391,11 +396,9 @@ describe('renderTimeline tooltip layer', () => {
 });
 
 describe('renderTimeline provider identity as text (a11y)', () => {
-  it('exposes the provider name as visually-hidden text beside the dot, so identity is never color-alone', () => {
-    // The account label intentionally carries NO provider name — the colored
-    // dot must not be the only carrier of provider identity (dataviz rule:
-    // identity is never color-alone; CVD/sighted-light readers cannot read
-    // sub-3:1 dots). A visually-hidden provider name supplies the text channel.
+  it('renders provider and account together in the timeline lane label', () => {
+    // Timeline labels intentionally use the explicit 【provider】account form;
+    // the card itself already has a separate provider badge.
     const root = renderTimeline(
       model({
         lanes: [
@@ -410,16 +413,6 @@ describe('renderTimeline provider identity as text (a11y)', () => {
     );
     const labelRow = root!.querySelector('.timelineLaneLabel');
     expect(labelRow).not.toBeNull();
-    // The visible lane name still carries the account label.
-    expect(labelRow!.querySelector('.timelineLaneName')?.textContent ?? '').toContain('DEF456');
-    // A visually-hidden provider-name element carries provider identity as text.
-    const providerName = labelRow!.querySelector('.timelineProviderName');
-    expect(providerName, 'expected a visually-hidden provider-name element').not.toBeNull();
-    expect(providerName!.classList.contains('timelineSrOnly')).toBe(true);
-    expect(providerName!.textContent ?? '').toContain('Codex');
-    // The full row text includes both account and provider identity.
-    const rowText = labelRow!.textContent ?? '';
-    expect(rowText).toContain('DEF456');
-    expect(rowText).toContain('Codex');
+    expect(labelRow!.querySelector('.timelineLaneName')?.textContent).toBe('【Codex】DEF456');
   });
 });

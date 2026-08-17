@@ -57,6 +57,11 @@ export function writeProviderPreference(provider: Provider): void {
   write({ ...readUiPreferences(), provider });
 }
 
+export function clearProviderPreference(): void {
+  const preferences = readUiPreferences();
+  write(preferences.sortMode === undefined ? {} : { sortMode: preferences.sortMode });
+}
+
 export function writeSortModePreference(sortMode: SortMode): void {
   write({ ...readUiPreferences(), sortMode });
 }

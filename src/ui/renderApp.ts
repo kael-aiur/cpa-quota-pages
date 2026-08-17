@@ -15,7 +15,7 @@
  */
 
 import type { AppState, QuotaLoadState } from '../app/state';
-import { paginate, sortAccounts } from '../quota/logic';
+import { sortAccounts } from '../quota/logic';
 import { nextRecoveryMs, urgentRecoveryId } from '../quota/resetSchedule';
 import type { AccountEntry, SortMode } from '../quota/types';
 import {
@@ -50,7 +50,9 @@ export interface QuotaViewHandlers {
   onReset?(accountId: string): void;
   onSelectProvider(selection: ProviderSelection): void;
   onSelectSort(mode: SortMode): void;
-  onPageChange(page: number): void;
+  /** @deprecated Pagination was removed; retained for compatibility. */
+  onPageChange?(page: number): void;
+  /** @deprecated Theme is controlled externally; no in-page toggle is rendered. */
   onToggleTheme?(): void;
   onTimelineMode?(mode: 'weekly' | 'session'): void;
   onTimelineShift?(delta: -1 | 1): void;
@@ -63,13 +65,13 @@ export interface RenderAppOptions {
   revealAccountIdentity: boolean;
   /** Admin-owned reset capability flag + button label; `null` hides the reset button. */
   resetAction: { label: string } | null;
+  /** @deprecated Kept for callers compiled against the old paged view. */
   pageSize: number;
   now(): number;
   clock: MinuteClock;
   handlers: QuotaViewHandlers;
   /** Resolve the per-card account label (anonymous hash for user, identity handled inside the card for admin). */
   resolveLabel?(entry: AccountEntry): string;
-  labels?: { title?: string; description?: string };
 }
 
 export interface RenderAppHandle {
@@ -102,17 +104,18 @@ export function deriveVisibleAccounts(state: Readonly<AppState>, ui: QuotaUiStat
   return accounts.filter((account) => account.provider === ui.selectedProvider);
 }
 
-/** Visible accounts after sort + the clamped page slice plus paging metadata. */
+/** Accounts after applying the provider filter and canonical sort. */
 export function derivePage(
   state: Readonly<AppState>,
   ui: QuotaUiState,
-  pageSize: number,
+  _pageSize: number,
   nowMs: number,
 ): { items: AccountEntry[]; page: number; totalPages: number; totalItems: number } {
   const visible = deriveVisibleAccounts(state, ui);
-  const sorted = sortAccounts(visible, ui.sortMode, (entry) => recoveryAt(state, entry, nowMs));
-  const paged = paginate(sorted, ui.currentPage, pageSize);
-  return { items: paged.items, page: paged.page, totalPages: paged.totalPages, totalItems: paged.totalItems };
+  const items = sortAccounts(visible, ui.sortMode, (entry) => recoveryAt(state, entry, nowMs));
+  // The page metadata is retained for source compatibility with consumers that
+  // used the old helper; the view itself no longer renders pagination.
+  return { items, page: 1, totalPages: 1, totalItems: items.length };
 }
 
 function providerCounts(accounts: ReadonlyArray<AccountEntry>): Partial<Record<ProviderSelection, number>> {
@@ -138,41 +141,26 @@ function buildStats(accounts: ReadonlyArray<AccountEntry>, state: Readonly<AppSt
     if (quota?.status === 'success') success += 1;
     else if (quota?.status === 'error') error += 1;
   }
-  return h('div', {
+  const stats = h('div', {
     class: 'statsBar',
     data: { role: 'stats' },
-    children: [
-      h('span', { class: 'stat', children: [h('span', { class: 'statLabel', text: '账号' }), h('span', { class: 'statValue', text: String(accounts.length) })] }),
-      h('span', { class: 'stat', children: [h('span', { class: 'statLabel', text: '成功' }), h('span', { class: 'statValue', text: String(success) })] }),
-      h('span', { class: 'stat', children: [h('span', { class: 'statLabel', text: '失败' }), h('span', { class: 'statValue', text: String(error) })] }),
-    ],
+    aria: { label: `共 ${accounts.length} 个账号，成功 ${success}，失败 ${error}` },
   });
-}
-
-function buildPagination(page: number, totalPages: number, handlers: QuotaViewHandlers): HTMLElement {
-  const prev = h('button', {
-    class: 'btn btn-sm pageNav',
-    attrs: { type: 'button', 'data-action': 'page-prev', 'aria-label': '上一页' },
-    text: '上一页',
-  });
-  prev.disabled = page <= 1;
-  prev.addEventListener('click', () => { if (page > 1) handlers.onPageChange(page - 1); });
-
-  const status = h('span', {
-    class: 'pageStatus',
-    data: { role: 'page-status' },
-    text: `第 ${page} / ${totalPages} 页`,
-  });
-
-  const next = h('button', {
-    class: 'btn btn-sm pageNav',
-    attrs: { type: 'button', 'data-action': 'page-next', 'aria-label': '下一页' },
-    text: '下一页',
-  });
-  next.disabled = page >= totalPages;
-  next.addEventListener('click', () => { if (page < totalPages) handlers.onPageChange(page + 1); });
-
-  return h('div', { class: 'pagination', children: [prev, status, next] });
+  for (const [kind, label, value] of [
+    ['total', '账号总数', accounts.length],
+    ['success', '查询成功', success],
+    ['error', '查询失败', error],
+  ] as const) {
+    stats.append(h('span', {
+      class: `stat stat-${kind}`,
+      data: { kind },
+      children: [
+        h('span', { class: 'statLabel', text: label }),
+        h('strong', { class: 'statValue', text: String(value) }),
+      ],
+    }));
+  }
+  return stats;
 }
 
 function buildTimeline(
@@ -182,7 +170,7 @@ function buildTimeline(
   resolveLabel: (entry: AccountEntry) => string,
   nowMs: number,
   handlers: QuotaViewHandlers,
-): HTMLElement | null {
+): HTMLElement {
   const lanes: Array<{ lane: TimelineLane; label: string }> = [];
   for (const account of pageAccounts) {
     const quota = state.quotaCache.get(account.id);
@@ -196,7 +184,6 @@ function buildTimeline(
     });
     lanes.push({ lane, label: resolveLabel(account) });
   }
-  if (lanes.length === 0) return null;
   const span = timelineSpan(ui.timelineMode, ui.timelineOffset, nowMs);
   const projected: TimelineProjectedLane[] = lanes.map(({ lane, label }) => ({
     lane,
@@ -241,12 +228,9 @@ export function renderApp(options: RenderAppOptions): RenderAppHandle {
     const headerHandlers = {
       onRefreshAccounts: () => handlers.onRefreshAccounts(),
       onQueryAll: () => handlers.onQueryAll(),
-      ...(handlers.onToggleTheme ? { onToggleTheme: () => handlers.onToggleTheme?.() } : {}),
     };
     root.append(renderHeader({
       mode: options.mode,
-      ...(options.labels?.title !== undefined ? { title: options.labels.title } : {}),
-      ...(options.labels?.description !== undefined ? { description: options.labels.description } : {}),
       handlers: headerHandlers,
     }));
 
@@ -262,7 +246,7 @@ export function renderApp(options: RenderAppOptions): RenderAppHandle {
       },
     }));
 
-    const { items, page, totalPages } = derivePage(state, uiState, options.pageSize, nowMs);
+    const { items } = derivePage(state, uiState, options.pageSize, nowMs);
     root.append(buildStats(accounts, state));
 
     // Spec §7.1 "一小时内最早恢复项强调": per card, the earliest recovering item
@@ -299,10 +283,7 @@ export function renderApp(options: RenderAppOptions): RenderAppHandle {
     }
     root.append(grid);
 
-    root.append(buildPagination(page, totalPages, handlers));
-
-    const timeline = buildTimeline(state, uiState, items, resolveLabel, nowMs, handlers);
-    if (timeline) root.append(timeline);
+    root.append(buildTimeline(state, uiState, items, resolveLabel, nowMs, handlers));
   };
 
   const unsubscribeClock = clock.subscribe(() => {

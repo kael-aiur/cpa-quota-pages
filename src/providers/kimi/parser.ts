@@ -1,4 +1,5 @@
 import type { JsonRecord } from '../../api/types';
+import { extractRecentRequests } from '../shared';
 import type { ProviderQuotaData, QuotaWindow } from '../types';
 
 export interface KimiQuotaWindow extends QuotaWindow {
@@ -197,5 +198,6 @@ export function parseKimiQuota(payload: unknown, nowMs: number): KimiQuotaData {
     if (summary) windows.push({ ...summary, id: 'summary' });
   }
 
-  return { windows };
+  const recentRequests = extractRecentRequests(parsed);
+  return { windows, ...(recentRequests !== undefined ? { recentRequests } : {}) };
 }

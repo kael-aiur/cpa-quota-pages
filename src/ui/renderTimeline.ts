@@ -110,23 +110,67 @@ function creditDetail(label: string, credit: TimelineCredit, nowMs: number): str
   return `${label} · 额度重置券 · 过期 ${formatResetLabel(credit.expiresAtMs, nowMs)}`;
 }
 
-/** Show/hide a single shared tooltip from a focusable mark. Text is assigned via textContent. */
-function wireTooltip(target: HTMLElement, tooltip: HTMLElement, detail: string, leftCss: string): void {
-  const show = (): void => {
-    tooltip.textContent = detail;
-    tooltip.style.setProperty('left', leftCss);
-    tooltip.hidden = false;
-    tooltip.setAttribute('aria-hidden', 'false');
-  };
+interface TooltipController {
+  element: HTMLElement;
+  attach(target: HTMLElement, detail: string): void;
+  hide(): void;
+}
+
+function createTooltipController(): TooltipController {
+  const tooltip = h('div', {
+    class: 'timelineTooltip',
+    attrs: { role: 'tooltip', id: 'timeline-tooltip' },
+  });
+  tooltip.hidden = true;
+  tooltip.setAttribute('aria-hidden', 'true');
+
   const hide = (): void => {
     tooltip.hidden = true;
     tooltip.setAttribute('aria-hidden', 'true');
     tooltip.textContent = '';
   };
-  target.addEventListener('focus', show);
-  target.addEventListener('blur', hide);
-  target.addEventListener('mouseenter', show);
-  target.addEventListener('mouseleave', hide);
+
+  const show = (target: HTMLElement, detail: string): void => {
+    tooltip.textContent = detail;
+    tooltip.hidden = false;
+    tooltip.setAttribute('aria-hidden', 'false');
+
+    const targetRect = target.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const viewportWidth = typeof window !== 'undefined' && Number.isFinite(window.innerWidth)
+      ? window.innerWidth
+      : document.documentElement.clientWidth || 1024;
+    const viewportHeight = typeof window !== 'undefined' && Number.isFinite(window.innerHeight)
+      ? window.innerHeight
+      : document.documentElement.clientHeight || 768;
+    const width = tooltipRect.width || Math.min(260, viewportWidth - 16);
+    const height = tooltipRect.height || 32;
+    const gap = 8;
+    const padding = 8;
+    const left = Math.max(padding, Math.min(
+      targetRect.left + (targetRect.width / 2) - (width / 2),
+      viewportWidth - width - padding,
+    ));
+    const above = targetRect.top - height - gap;
+    const below = targetRect.bottom + gap;
+    const top = above >= padding
+      ? above
+      : Math.min(Math.max(below, padding), viewportHeight - height - padding);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  return {
+    element: tooltip,
+    attach(target, detail) {
+      target.setAttribute('aria-describedby', tooltip.id);
+      target.addEventListener('focus', () => show(target, detail));
+      target.addEventListener('blur', hide);
+      target.addEventListener('mouseenter', () => show(target, detail));
+      target.addEventListener('mouseleave', hide);
+    },
+    hide,
+  };
 }
 
 function buildHeader(model: TimelineModel, handlers: TimelineHandlers): HTMLElement {
@@ -184,22 +228,45 @@ function buildLabelColumn(lanes: ReadonlyArray<TimelineProjectedLane>): HTMLElem
   const col = h('div', { class: 'timelineLabelColumn' });
   for (const pl of lanes) {
     const row = h('div', { class: 'timelineLaneLabel' });
-    // Provider identity is NEVER carried by color alone (dataviz rule). The
-    // colored dot is sub-3:1 for several light-theme slots, so the provider
-    // name is also emitted as visually-hidden text — the relief channel for
-    // screen-reader and CVD / low-contrast readers. It precedes the account
-    // label in DOM so it reads "[provider] [account]".
+    // Keep the provider explicit in text as well as in the identity dot. The
+    // card already has a provider badge; the timeline uses the requested
+    // `[provider]account` form so lanes remain identifiable on their own.
     row.append(
       h('span', { class: 'timelineProviderDot', data: { provider: pl.lane.provider }, aria: { hidden: 'true' } }),
-      h('span', { class: 'timelineProviderName timelineSrOnly', text: PROVIDER_LABEL[pl.lane.provider] }),
-      h('span', { class: 'timelineLaneName', text: pl.label }),
+      h('span', { class: 'timelineLaneName', text: `【${PROVIDER_LABEL[pl.lane.provider]}】${pl.label}` }),
     );
     col.append(row);
   }
   return col;
 }
 
-function buildLaneTrack(pl: TimelineProjectedLane, nowMs: number, tooltip: HTMLElement): HTMLElement {
+function formatAxisDate(ms: number): string {
+  try {
+    return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit' }).format(new Date(ms));
+  } catch {
+    return `${new Date(ms).getMonth() + 1}/${new Date(ms).getDate()}`;
+  }
+}
+
+function buildDateAxis(span: TimelineSpan): HTMLElement {
+  const axis = h('div', {
+    class: 'timelineDateAxis',
+    aria: { label: '时间线日期' },
+  });
+  const step = span.days >= 14 ? 2 : 1;
+  for (let day = 0; day <= span.days; day += step) {
+    const date = new Date(span.startMs);
+    date.setDate(date.getDate() + day);
+    axis.append(h('span', {
+      class: 'timelineDateMark',
+      style: { left: `${(day / span.days) * 100}%` },
+      text: formatAxisDate(date.getTime()),
+    }));
+  }
+  return axis;
+}
+
+function buildLaneTrack(pl: TimelineProjectedLane, nowMs: number, tooltip: TooltipController): HTMLElement {
   const track = h('div', { class: 'timelineLaneTrack' });
 
   for (const w of pl.windows) {
@@ -214,7 +281,7 @@ function buildLaneTrack(pl: TimelineProjectedLane, nowMs: number, tooltip: HTMLE
     if (w.state === 'live' && remaining) {
       mark.append(h('span', { class: 'timelineWindowLabel', text: `剩余 ${remaining}` }));
     }
-    wireTooltip(mark, tooltip, detail, `${w.leftPercent}%`);
+    tooltip.attach(mark, detail);
     track.append(mark);
   }
 
@@ -228,7 +295,7 @@ function buildLaneTrack(pl: TimelineProjectedLane, nowMs: number, tooltip: HTMLE
       title: '额度重置券',
     });
     tick.append(h('span', { class: 'timelineCreditMark', aria: { hidden: 'true' } }));
-    wireTooltip(tick, tooltip, detail, `${c.leftPercent}%`);
+    tooltip.attach(tick, detail);
     track.append(tick);
   }
 
@@ -279,28 +346,40 @@ function buildTable(lanes: ReadonlyArray<TimelineProjectedLane>, nowMs: number):
 }
 
 /**
- * Render the timeline. Returns null when no lane projects any parseable window
- * or credit (the model carries pre-projected lanes; empty lanes are dropped).
+ * Render the timeline shell even when the selected mode has no compatible data.
+ * Keeping the mode tabs mounted lets users switch back to a renderable mode.
  */
-export function renderTimeline(model: TimelineModel, handlers: TimelineHandlers): HTMLElement | null {
+export function renderTimeline(model: TimelineModel, handlers: TimelineHandlers): HTMLElement {
   const lanes = model.lanes.filter((pl) => pl.windows.length > 0 || pl.credits.length > 0);
-  if (lanes.length === 0) return null;
-
   const nowMs = model.nowMs;
+  const ready = lanes.length > 0;
 
   const root = h('section', {
     class: 'timeline',
-    data: { mode: model.mode, state: 'ready' },
+    data: { mode: model.mode, state: ready ? 'ready' : 'empty' },
     aria: { label: '额度恢复时间线' },
   });
 
   root.append(buildHeader(model, handlers));
+
+  if (!ready) {
+    root.append(h('div', {
+      class: 'timelineEmpty',
+      data: { reason: model.lanes.length === 0 ? 'not-loaded' : 'no-compatible-window' },
+      children: [
+        h('strong', { text: model.lanes.length === 0 ? '查询账号额度后将在此展示恢复时间线' : '当前模式没有可展示的额度恢复窗口' }),
+        h('span', { text: model.lanes.length === 0 ? '点击上方“查询全部账号额度”开始查询。' : '可以切换“周”或“会话”查看其他窗口。' }),
+      ],
+    }));
+    return root;
+  }
 
   const viewport = h('div', { class: 'timelineViewport' });
   viewport.append(buildLabelColumn(lanes));
 
   const trackScroll = h('div', { class: 'timelineTrackScroll' });
   const trackArea = h('div', { class: 'timelineTrackArea' });
+  trackArea.append(buildDateAxis(model.span));
 
   if (model.span.nowPositionPercent !== null && Number.isFinite(model.span.nowPositionPercent)) {
     trackArea.append(
@@ -312,18 +391,15 @@ export function renderTimeline(model: TimelineModel, handlers: TimelineHandlers)
     );
   }
 
-  const tooltip = h('div', { class: 'timelineTooltip', attrs: { role: 'tooltip' } });
-  tooltip.hidden = true;
-  tooltip.setAttribute('aria-hidden', 'true');
-
+  const tooltip = createTooltipController();
   for (const pl of lanes) {
     trackArea.append(buildLaneTrack(pl, nowMs, tooltip));
   }
 
-  trackArea.append(tooltip);
+  trackScroll.addEventListener('scroll', tooltip.hide, { passive: true });
   trackScroll.append(trackArea);
   viewport.append(trackScroll);
-  root.append(viewport);
+  root.append(viewport, tooltip.element);
 
   root.append(buildLegend());
   root.append(buildTable(lanes, nowMs));

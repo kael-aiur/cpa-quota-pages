@@ -1,5 +1,6 @@
 import type { AuthFile, JsonRecord } from '../../api/types';
 import type { QuotaWindow, ProviderQuotaData } from '../types';
+import { extractRecentRequests } from '../shared';
 
 export interface CodexCredit extends JsonRecord {
   id: string;
@@ -321,8 +322,10 @@ export function parseCodexQuota(
     return occurrence === 0 ? window : { ...window, id: `${window.id}-${occurrence + 1}` };
   });
   const parsedCredits = parseCredits(creditDetails, nowMs, body);
+  const recentRequests = extractRecentRequests(body);
   return {
     windows: finalizedWindows,
+    ...(recentRequests !== undefined ? { recentRequests } : {}),
     accountId: accountId(file),
     planType: planType(body, file),
     subscriptionActiveUntil: renewal(body, file),

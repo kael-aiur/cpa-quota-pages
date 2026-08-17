@@ -3,7 +3,7 @@ import type { Provider } from '../providers/types';
 import type { QuotaLoadState } from '../app/state';
 import { h, textOf } from './dom';
 import { refreshIcon, resetIcon } from './icons';
-import { renderProviderBody } from './renderProviderBody';
+import { renderProviderBody, renderRecentRequests } from './renderProviderBody';
 
 export interface RenderOptions {
   mode: 'user' | 'admin';
@@ -14,7 +14,7 @@ export interface RenderOptions {
    * reset-related copy at all. `null` disables the reset button.
    */
   resetAction: { label: string } | null;
-  /** Precomputed SHA-256 anonymous label (see quota/identity). */
+  /** Precomputed account display name used in the card header. */
   anonymousLabel: string;
   /** Snapshot time for reset formatting; defaults to Date.now(). */
   nowMs?: number;
@@ -164,5 +164,9 @@ export function renderQuotaCard(
   }
 
   card.append(actions);
+  if (quota.status === 'success') {
+    const recentRequests = renderRecentRequests(quota.data.recentRequests);
+    if (recentRequests) card.append(recentRequests);
+  }
   return card;
 }

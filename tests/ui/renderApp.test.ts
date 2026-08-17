@@ -141,7 +141,7 @@ describe('renderApp authenticated shell', () => {
     expect(root.querySelector('[data-provider="kimi"]')?.textContent).toContain('1');
   });
 
-  it('renders only the current page of cards', () => {
+  it('renders every card and no pagination controls', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
@@ -151,11 +151,11 @@ describe('renderApp authenticated shell', () => {
     handles.push(handle);
     const accounts = [account('a', 'claude'), account('b', 'claude'), account('c', 'claude'), account('d', 'claude')];
     handle.render(authenticatedState(accounts), ui({ currentPage: 2 }), 'authenticated');
-    expect(root.querySelectorAll('.card').length).toBe(2);
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('2');
+    expect(root.querySelectorAll('.card').length).toBe(4);
+    expect(root.querySelector('.pagination')).toBeNull();
   });
 
-  it('clamps the displayed page when the page number exceeds total pages', () => {
+  it('ignores legacy page state when rendering the full account list', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
@@ -163,9 +163,8 @@ describe('renderApp authenticated shell', () => {
       pageSize: 2, now: () => clock.getSnapshot(), clock, handlers: handlers(),
     });
     handles.push(handle);
-    // 4 accounts, pageSize 2 → 2 pages; request page 5 must clamp to 2.
     handle.render(authenticatedState([account('a', 'claude'), account('b', 'claude'), account('c', 'claude'), account('d', 'claude')]), ui({ currentPage: 5 }), 'authenticated');
-    expect(root.querySelector('[data-role="page-status"]')?.textContent).toContain('2');
+    expect(root.querySelectorAll('.card').length).toBe(4);
   });
 
   it('marks the selected provider tab active and the others inactive', () => {
@@ -181,7 +180,7 @@ describe('renderApp authenticated shell', () => {
     expect(root.querySelector('[data-provider="claude"]')?.getAttribute('aria-selected')).toBe('false');
   });
 
-  it('disables the next-page control on the last page', () => {
+  it('does not render page navigation controls', () => {
     const root = newRoot();
     const clock = fakeClock();
     const handle = renderApp({
@@ -190,7 +189,8 @@ describe('renderApp authenticated shell', () => {
     });
     handles.push(handle);
     handle.render(authenticatedState([account('a', 'claude'), account('b', 'claude')]), ui(), 'authenticated');
-    expect((root.querySelector('[data-action="page-next"]') as HTMLButtonElement)?.disabled).toBe(true);
+    expect(root.querySelector('[data-action="page-next"]')).toBeNull();
+    expect(root.querySelector('[data-action="page-prev"]')).toBeNull();
   });
 
   it('renders stats totals for the visible set', () => {
@@ -243,7 +243,7 @@ describe('renderApp authenticated shell', () => {
     expect(clock.destroy).toHaveBeenCalledTimes(0); // renderApp must not destroy the injected clock itself on every render
   });
 
-  it('wires the query, refresh, page and provider handlers to DOM controls', () => {
+  it('wires the query, refresh and provider handlers to DOM controls', () => {
     const root = newRoot();
     const clock = fakeClock();
     const h = handlers();
@@ -257,19 +257,19 @@ describe('renderApp authenticated shell', () => {
 
     root.querySelector<HTMLElement>('[data-action="refresh-accounts"]')!.click();
     root.querySelector<HTMLElement>('[data-action="query-all"]')!.click();
-    root.querySelector<HTMLElement>('[data-action="page-next"]')!.click();
+    expect(root.querySelector('[data-action="page-next"]')).toBeNull();
     root.querySelector<HTMLElement>('[data-provider="claude"]')!.click();
     root.querySelector<HTMLElement>('.card [data-action="query"]')!.click();
 
     expect(h.onRefreshAccounts).toHaveBeenCalledTimes(1);
     expect(h.onQueryAll).toHaveBeenCalledTimes(1);
-    expect(h.onPageChange).toHaveBeenCalledWith(2);
+    expect(h.onPageChange).not.toHaveBeenCalled();
     expect(h.onSelectProvider).toHaveBeenCalledWith('claude');
     expect(h.onQueryOne).toHaveBeenCalledWith('a');
 
-    // Spec §7.1: the header button must describe CURRENT-PAGE semantics, so
-    // the label can never drift back to "查询全部额度" while querying one page.
-    expect(root.querySelector<HTMLElement>('[data-action="query-all"]')!.textContent).toContain('查询当前页额度');
+    expect(root.querySelector<HTMLElement>('[data-action="query-all"]')!.textContent).toContain('查询全部账号额度');
+    expect(root.querySelector('[data-action="toggle-theme"]')).toBeNull();
+    expect(root.querySelector('.pageTitle')).toBeNull();
   });
 });
 
